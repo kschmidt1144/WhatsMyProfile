@@ -1,0 +1,53 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  THIS REPOSITORY IS PUBLIC AND THIS PROJECT COLLECTS PERSONAL DATA.
+#
+#  Nothing that identifies a person may ever be committed. Everything under
+#  data/ is re-collectable via `wmp refresh` — it is cache, not source.
+#  When in doubt, leave it out: `git check-ignore -v <path>` before adding.
+# ─────────────────────────────────────────────────────────────────────────────
+
+data/
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# Personal artifacts, wherever they land — belt and braces, because these
+# arrive as ad-hoc downloads that don't always land under data/.
+exports/
+takeout/
+dossiers/
+subject-access/
+*.dossier.json
+*.har
+*.mbox
+*.vcf
+*.pst
+*takeout*.zip
+*-my-activity*.json
+
+# Secrets
+.env
+.env.*
+!.env.example
+.secrets/
+*.pem
+
+# Report build artifacts. Figures are derived from personal data, so they are
+# ignored by default; a reviewed, non-identifying figure can be `git add -f`ed.
+report/figures/*.png
+report/figures/*.svg
+report/*.html
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
