@@ -13,7 +13,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from . import catalog
+from . import catalog, truth
 from .config import TIDY, WAREHOUSE, ensure_dirs
 from .model import Attribute, Collected, Identity, Inference, Signal
 
@@ -56,6 +56,29 @@ def _read_all(table: str, cls) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+def _apply_ground_truth(inferences: pd.DataFrame) -> pd.DataFrame:
+    """Overlay the subject's recorded verdicts onto freshly-collected inferences.
+
+    Adds a `scored` column, which carries real weight: without it,
+    `verdict = 'unverifiable'` is ambiguous between "nobody has judged this
+    yet" and "judged, and genuinely unknowable". Those are different states and
+    conflating them would quietly inflate every accuracy figure.
+    """
+    inferences = inferences.copy()
+    if inferences.empty:
+        inferences["scored"] = pd.Series(dtype=bool)
+        return inferences
+
+    stored = truth.load()
+    keys = [truth.claim_key(str(s), str(c)) for s, c in zip(inferences["from_sources"], inferences["claim"])]
+    inferences["scored"] = [key in stored for key in keys]
+    inferences["verdict"] = [
+        stored[key]["verdict"] if key in stored else verdict
+        for key, verdict in zip(keys, inferences["verdict"])
+    ]
+    return inferences
+
+
 def build() -> Path:
     """Rebuild warehouse.duckdb from every source's tidy parquet."""
     ensure_dirs()
@@ -67,6 +90,7 @@ def build() -> Path:
     frames["attributes"] = pd.concat([declared, frames["attributes"]], ignore_index=True).drop_duplicates(
         subset=["attribute"], keep="first"
     )
+    frames["inferences"] = _apply_ground_truth(frames["inferences"])
 
     if WAREHOUSE.exists():
         WAREHOUSE.unlink()

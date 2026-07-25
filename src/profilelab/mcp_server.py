@@ -190,6 +190,40 @@ def profile_inferences(undisclosed_only: bool = False) -> str:
 
 
 @mcp.tool()
+def profile_scorecard() -> str:
+    """How well inferences held up against the subject's own ground truth.
+
+    Read-only. Recording a verdict is deliberately not exposed as a tool —
+    ground truth is entered by the subject through `wmp score`, never written
+    by a model.
+    """
+    if not warehouse.exists():
+        return _NO_DATA
+    card = analysis.scorecard()
+    if not card.total:
+        return "No inferences recorded yet."
+    lines = [
+        f"{card.scored} of {card.total} claims scored.",
+        f"  correct: {card.correct}",
+        f"  incorrect: {card.incorrect}",
+        f"  unverifiable: {card.unverifiable}",
+    ]
+    if card.accuracy is not None:
+        lines.append(
+            f"Accuracy {card.accuracy:.0%} on {card.correct + card.incorrect} decided claims "
+            f"(unverifiable excluded); measured industry benchmark for interest segments is "
+            f"{analysis.INDUSTRY_INTEREST_ACCURACY:.0%}."
+        )
+    lines.append(
+        f"{card.undisclosed_correct} claim(s) were correct AND never disclosed by the subject — "
+        "this is the inference gap."
+    )
+    if card.unscored:
+        lines.append(f"{card.unscored} still unscored.")
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def profile_agreement(min_platforms: int = 2) -> str:
     """Ad-preference topics ranked by how many platforms independently assert them.
 

@@ -6,7 +6,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import analysis, catalog, entropy, refresh as refresh_mod, sources, warehouse
+from rich.prompt import Confirm, Prompt
+
+from . import analysis, catalog, entropy, refresh as refresh_mod, sources, truth, warehouse
 from .sources import adprefs
 from .sources.adprefs import base as adprefs_base
 
@@ -123,6 +125,119 @@ def agreement(
         "from behaviour. Divergence means at least one of them is wrong — which, given "
         "measured segment accuracy, is the expected case.[/dim]"
     )
+
+
+@app.command()
+def score(
+    source: str = typer.Option(None, "-s", "--source", help="Only score claims from this source."),
+    limit: int = typer.Option(20, "-n", "--limit", help="How many to score in this sitting."),
+    include_disclosed: bool = typer.Option(
+        False, "--include-disclosed", help="Also score claims you did disclose."
+    ),
+) -> None:
+    """Judge what was inferred about you — the ground truth the gap is measured against.
+
+    Answers are saved after each one, so quitting mid-way keeps your progress.
+    """
+    _require_warehouse()
+    pending = analysis.unscored_inferences(source=source, undisclosed_only=not include_disclosed)
+    if not pending:
+        console.print("[green]nothing left to score[/green] [dim]— see `wmp scorecard`[/dim]")
+        return
+
+    console.print(
+        f"\n[bold]{len(pending)} claim(s) awaiting judgement[/bold] "
+        f"[dim]· scoring up to {limit} now[/dim]"
+    )
+    console.print(
+        "[dim]Your answers are stored in data/truth/, apart from everything else, and are "
+        "more sensitive than the claims they judge. `wmp forget-truth` deletes them all.[/dim]\n"
+    )
+
+    recorded = 0
+    for index, row in enumerate(pending[:limit], start=1):
+        console.print(f"[dim]{index}/{min(limit, len(pending))}[/dim] [bold]{row['claim']}[/bold]")
+        console.print(f"    [dim]inferred by {row['inferred_by']}[/dim]")
+        answer = Prompt.ask(
+            "    true of you? [green]y[/green]es / [red]n[/red]o / "
+            "[dim]u[/dim]nverifiable / [dim]s[/dim]kip / [dim]q[/dim]uit",
+            choices=["y", "n", "u", "s", "q"],
+            default="s",
+            show_choices=False,
+            show_default=False,
+        )
+        if answer == "q":
+            break
+        if answer == "s":
+            console.print()
+            continue
+        verdict = {"y": "correct", "n": "incorrect", "u": "unverifiable"}[answer]
+        truth.record(row["from_sources"], row["claim"], verdict)
+        recorded += 1
+        console.print()
+
+    console.print(f"[green]recorded {recorded} verdict(s)[/green]")
+    if recorded:
+        warehouse.build()  # fold the new verdicts into the warehouse
+        console.print("[dim]warehouse rebuilt — run `wmp scorecard`[/dim]")
+
+
+@app.command()
+def scorecard() -> None:
+    """How well the inferences held up, and how many were right but undisclosed."""
+    _require_warehouse()
+    card = analysis.scorecard()
+    if not card.total:
+        console.print("[yellow]no inferences recorded yet[/yellow]")
+        return
+
+    console.print(f"\n[bold]{card.scored} of {card.total} claim(s) scored[/bold]")
+    if not card.scored:
+        console.print("[dim]run `wmp score` to judge them[/dim]")
+        return
+
+    table = Table(title="verdicts", header_style="bold")
+    for column in ("verdict", "count"):
+        table.add_column(column)
+    table.add_row("[green]correct[/green]", str(card.correct))
+    table.add_row("[red]incorrect[/red]", str(card.incorrect))
+    table.add_row("[dim]unverifiable[/dim]", str(card.unverifiable))
+    console.print(table)
+
+    if card.accuracy is not None:
+        industry = analysis.INDUSTRY_INTEREST_ACCURACY
+        verdict = "above" if card.accuracy > industry else "below"
+        console.print(
+            f"\n[bold]accuracy {card.accuracy:.0%}[/bold] "
+            f"[dim]on {card.correct + card.incorrect} decided claim(s) "
+            f"(unverifiable excluded) — {verdict} the {industry:.0%} measured across "
+            f"19 data brokers' interest segments[/dim]"
+        )
+    console.print(
+        f"\n[bold]{card.undisclosed_correct} claim(s) correct AND never disclosed by you.[/bold]"
+    )
+    console.print(
+        "[dim]That is the inference gap: things a system worked out that you never told it.[/dim]"
+    )
+    if card.unscored:
+        console.print(f"\n[yellow]{card.unscored} still unscored[/yellow] [dim]— `wmp score`[/dim]")
+
+
+@app.command("forget-truth")
+def forget_truth(
+    yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt."),
+) -> None:
+    """Delete every recorded ground-truth verdict."""
+    stored = len(truth.load())
+    if not stored:
+        console.print("[dim]no verdicts stored[/dim]")
+        return
+    if not yes and not Confirm.ask(f"Delete all {stored} recorded verdict(s)?", default=False):
+        console.print("[dim]kept[/dim]")
+        return
+    console.print(f"[green]deleted {truth.clear()} verdict(s)[/green]")
+    if warehouse.exists():
+        warehouse.build()
 
 
 @app.command()

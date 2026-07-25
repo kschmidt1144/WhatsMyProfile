@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from profilelab import catalog, entropy, sources
+from profilelab import analysis, catalog, entropy, sources, truth
 from profilelab.config import ROOT, WORLD_POPULATION
 from profilelab.model import Attribute, Inference, Signal
 from profilelab.sources import adprefs, github
@@ -350,6 +350,70 @@ def test_missing_export_is_unavailable_not_an_error():
         assert isinstance(module.available(), bool)
 
 
+# ── ground truth ─────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def truth_store(tmp_path, monkeypatch):
+    monkeypatch.setattr(truth, "STORE", tmp_path / "verdicts.json")
+    return tmp_path / "verdicts.json"
+
+
+def test_claim_key_is_stable_across_whitespace_and_case(truth_store):
+    a = truth.claim_key("google_ads", "interest: Relocation & Household Moving")
+    b = truth.claim_key("GOOGLE_ADS", "interest:  relocation & household   moving")
+    assert a == b
+
+
+def test_verdict_round_trips(truth_store):
+    truth.record("google_ads", "interest: Baseball", "correct")
+    assert truth.verdict_for("google_ads", "interest: Baseball") == "correct"
+    assert truth.verdict_for("google_ads", "interest: Jewelry") is None
+
+
+def test_verdict_must_be_a_known_value(truth_store):
+    with pytest.raises(ValueError):
+        truth.record("google_ads", "interest: Baseball", "probably")
+
+
+def test_rescoring_overwrites_rather_than_duplicates(truth_store):
+    truth.record("google_ads", "interest: Baseball", "correct")
+    truth.record("google_ads", "interest: Baseball", "incorrect")
+    assert truth.verdict_for("google_ads", "interest: Baseball") == "incorrect"
+    assert len(truth.load()) == 1
+
+
+def test_orphaned_verdicts_are_surfaced_not_silently_carried(truth_store):
+    """A platform rewording a topic must not leave a verdict attached to nothing."""
+    truth.record("google_ads", "interest: Fishing", "correct")
+    still_present = {truth.claim_key("google_ads", "interest: Baseball")}
+    orphaned = truth.orphans(still_present)
+    assert len(orphaned) == 1
+    assert orphaned[0]["claim"] == "interest: Fishing"
+
+
+def test_forget_and_clear(truth_store):
+    truth.record("google_ads", "interest: Baseball", "correct")
+    truth.record("google_ads", "interest: Food", "correct")
+    assert truth.forget("google_ads", "interest: Baseball") is True
+    assert truth.forget("google_ads", "interest: Baseball") is False
+    assert truth.clear() == 1
+    assert truth.load() == {}
+
+
+def test_accuracy_excludes_unverifiable_and_is_none_when_undecided():
+    """An unadjudicable claim says nothing about the inferrer, so it must not
+    count as a failure — and no decisions must yield None, not a bogus 0%."""
+    undecided = analysis.Scorecard(total=5, scored=2, correct=0, incorrect=0, unverifiable=2,
+                                   undisclosed_correct=0)
+    assert undecided.accuracy is None
+    assert undecided.unscored == 3
+
+    mixed = analysis.Scorecard(total=10, scored=10, correct=6, incorrect=2, unverifiable=2,
+                               undisclosed_correct=5)
+    assert mixed.accuracy == pytest.approx(0.75)  # 6/8, not 6/10
+
+
 # ── the guard that matters most ──────────────────────────────────────────────
 
 
@@ -367,6 +431,8 @@ def test_missing_export_is_unavailable_not_an_error():
         # Browser-automation output captured while driving a logged-in session.
         ".playwright-mcp/page-2026.yml",
         "amazon-signin.png",
+        # Ground truth — higher-order personal data than anything else here.
+        "data/truth/verdicts.json",
     ],
 )
 def test_personal_data_paths_are_gitignored(path):

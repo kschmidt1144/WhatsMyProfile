@@ -11,6 +11,12 @@ data/
 *.duckdb.wal
 *.parquet
 
+# Ground truth: the subject's own verdicts on what was inferred about them.
+# Higher-order personal data than the inferences it scores — a platform
+# guessing something is speculation, you confirming it is fact.
+data/truth/
+verdicts.json
+
 # Personal artifacts, wherever they land — belt and braces, because these
 # arrive as ad-hoc downloads that don't always land under data/.
 exports/
