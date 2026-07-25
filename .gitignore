@@ -25,6 +25,13 @@ subject-access/
 *takeout*.zip
 *-my-activity*.json
 
+# Browser automation output. Screenshots and snapshots taken while driving a
+# logged-in session capture whatever was on screen — account pages, order
+# history, ad profiles. Never committable.
+.playwright-mcp/
+*-signin.png
+*-login.png
+
 # Secrets
 .env
 .env.*

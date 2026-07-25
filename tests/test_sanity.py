@@ -364,6 +364,9 @@ def test_missing_export_is_unavailable_not_an_error():
         "subject-access/acxiom-response.pdf",
         "capture.har",
         "report/figures/bits.png",
+        # Browser-automation output captured while driving a logged-in session.
+        ".playwright-mcp/page-2026.yml",
+        "amazon-signin.png",
     ],
 )
 def test_personal_data_paths_are_gitignored(path):
