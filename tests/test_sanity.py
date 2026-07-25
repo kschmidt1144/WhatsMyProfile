@@ -414,6 +414,29 @@ def test_accuracy_excludes_unverifiable_and_is_none_when_undecided():
     assert mixed.accuracy == pytest.approx(0.75)  # 6/8, not 6/10
 
 
+def test_wilson_interval_is_wide_at_small_n():
+    """The guard against reading a point estimate as a result.
+
+    16/19 looks like it beats an 80% benchmark. The interval says a sample this
+    size cannot tell the two apart, and the scorecard must not claim otherwise.
+    """
+    lo, hi = analysis.wilson_interval(16, 19)
+    assert lo < analysis.INDUSTRY_INTEREST_ACCURACY < hi
+    assert hi - lo > 0.25  # spans more than 25 points
+
+    # A large sample at the same rate does separate them.
+    lo_big, hi_big = analysis.wilson_interval(1600, 1900)
+    assert lo_big > analysis.INDUSTRY_INTEREST_ACCURACY
+    assert hi_big - lo_big < 0.05
+
+
+def test_wilson_interval_stays_in_bounds_at_extremes():
+    assert analysis.wilson_interval(0, 5)[0] == 0.0
+    assert analysis.wilson_interval(5, 5)[1] == 1.0
+    with pytest.raises(ValueError):
+        analysis.wilson_interval(0, 0)
+
+
 # ── the guard that matters most ──────────────────────────────────────────────
 
 

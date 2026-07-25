@@ -13,6 +13,7 @@ the reader (see docs/research/):
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from . import catalog, entropy, warehouse
@@ -167,6 +168,10 @@ class Scorecard:
         return self.total - self.scored
 
     @property
+    def decided(self) -> int:
+        return self.correct + self.incorrect
+
+    @property
     def accuracy(self) -> float | None:
         """Correct as a share of claims actually decided.
 
@@ -174,8 +179,32 @@ class Scorecard:
         claim nobody can adjudicate says nothing about the inferrer. Returns
         None when nothing has been decided, instead of a misleading 0.0.
         """
-        decided = self.correct + self.incorrect
-        return self.correct / decided if decided else None
+        return self.correct / self.decided if self.decided else None
+
+    @property
+    def accuracy_interval(self) -> tuple[float, float] | None:
+        """95% Wilson interval on the accuracy.
+
+        Load-bearing, not decoration. A first sitting scores a couple of dozen
+        claims, and at that size the interval spans thirty-odd points — wide
+        enough that a point estimate sitting above a published benchmark means
+        nothing at all. Reporting the estimate alone invites exactly the
+        overclaim this project exists to avoid.
+        """
+        if not self.decided:
+            return None
+        return wilson_interval(self.correct, self.decided)
+
+
+def wilson_interval(successes: int, trials: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score interval — well-behaved at small n, unlike the normal approximation."""
+    if trials <= 0:
+        raise ValueError("trials must be positive")
+    p = successes / trials
+    denominator = 1 + z**2 / trials
+    centre = (p + z**2 / (2 * trials)) / denominator
+    margin = (z / denominator) * math.sqrt(p * (1 - p) / trials + z**2 / (4 * trials**2))
+    return max(0.0, centre - margin), min(1.0, centre + margin)
 
 
 def scorecard() -> Scorecard:

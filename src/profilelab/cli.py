@@ -204,15 +204,42 @@ def scorecard() -> None:
     table.add_row("[dim]unverifiable[/dim]", str(card.unverifiable))
     console.print(table)
 
+    if card.by_source and len(card.by_source) > 1:
+        per = Table(title="by source", header_style="bold")
+        for column in ("source", "scored", "correct", "incorrect", "accuracy"):
+            per.add_column(column)
+        for row in card.by_source:
+            # DuckDB SUM() comes back as float through pandas; these are counts.
+            correct, incorrect = int(row["correct"] or 0), int(row["incorrect"] or 0)
+            dec = correct + incorrect
+            per.add_row(
+                str(row["source"]), str(int(row["scored"] or 0)), str(correct),
+                str(incorrect), f"{correct / dec:.0%}" if dec else "—",
+            )
+        console.print(per)
+        console.print(
+            "[dim]Read the per-source rows, not the total. Blending a commercial ad profile "
+            "with a one-off heuristic averages two unrelated things.[/dim]"
+        )
+
     if card.accuracy is not None:
         industry = analysis.INDUSTRY_INTEREST_ACCURACY
-        verdict = "above" if card.accuracy > industry else "below"
+        lo, hi = card.accuracy_interval
         console.print(
             f"\n[bold]accuracy {card.accuracy:.0%}[/bold] "
-            f"[dim]on {card.correct + card.incorrect} decided claim(s) "
-            f"(unverifiable excluded) — {verdict} the {industry:.0%} measured across "
-            f"19 data brokers' interest segments[/dim]"
+            f"[dim]on {card.decided} decided claim(s), 95% CI [{lo:.0%}, {hi:.0%}][/dim]"
         )
+        # Only claim a difference the interval actually supports.
+        if lo > industry:
+            comparison = f"[green]above[/green] the {industry:.0%} industry benchmark"
+        elif hi < industry:
+            comparison = f"[red]below[/red] the {industry:.0%} industry benchmark"
+        else:
+            comparison = (
+                f"[yellow]indistinguishable[/yellow] from the {industry:.0%} industry benchmark "
+                f"— the interval contains it, so this sample cannot tell them apart"
+            )
+        console.print(f"[dim]{comparison} (19 data brokers' interest segments)[/dim]")
     console.print(
         f"\n[bold]{card.undisclosed_correct} claim(s) correct AND never disclosed by you.[/bold]"
     )
