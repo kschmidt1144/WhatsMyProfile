@@ -27,6 +27,37 @@ from collections.abc import Iterable
 
 from .config import WORLD_POPULATION
 
+# Measured on co-observed browser-fingerprint attributes: Berke et al. 2025
+# report 13 attributes whose individual entropies sum to 33.454 bits but whose
+# joint entropy is 12.101. Solving combine(bits, r) = 12.101 gives r ~= 0.80.
+# Applies to fingerprint attributes measured together; do NOT assume it
+# transfers to attributes from other surfaces.
+# See docs/research/01-population-baseline.md.
+MEASURED_REDUNDANCY = 0.80
+
+# Per-namespace redundancy defaults. Absence means "unmeasured", which resolves
+# to 0.0 — the independent sum, an upper bound on identifiability.
+NAMESPACE_REDUNDANCY: dict[str, float] = {"fp": MEASURED_REDUNDANCY}
+
+
+def sample_ceiling(n: int) -> float:
+    """Maximum entropy measurable from a sample of `n` observations.
+
+    You cannot observe more than log2(n) bits of distinction among n things.
+    Every published fingerprint entropy is bounded this way: Berke's 8,400
+    caps at 13.04 bits, Eckersley's 470k at 18.8, Gomez-Boix's 2M at ~21. A
+    measurement at its ceiling means the instrument ran out of resolution, not
+    that the true entropy was found.
+    """
+    if n < 1:
+        raise ValueError(f"sample size must be >= 1, got {n!r}")
+    return math.log2(n)
+
+
+def resolution_limited(bits: float, sample_n: int, tolerance: float = 1.0) -> bool:
+    """Whether a measurement is close enough to its sample ceiling to be suspect."""
+    return bits >= sample_ceiling(sample_n) - tolerance
+
 
 def surprisal(p: float) -> float:
     """Bits revealed by observing a value that occurs with probability `p`.
@@ -101,10 +132,24 @@ def is_unique(bits: float, population: int = WORLD_POPULATION) -> bool:
 
 
 def describe(bits: float, population: int = WORLD_POPULATION) -> str:
-    """One-line human summary — used by `wmp entropy` and the MCP tools."""
+    """One-line human summary — used by `wmp entropy` and the MCP tools.
+
+    Deliberately says "sample-unique", not "identified". Three separate results
+    stand between the two, and this lab measures only the first:
+
+        sample-unique -> population-unique -> linkable -> identified
+
+    Sample uniqueness does not imply population uniqueness, and population
+    uniqueness does not imply reidentification — an adversary still needs an
+    identified source to link against. See docs/research/04-behavioral-traces.md
+    and docs/research/05-linkage.md.
+    """
     remaining = anonymity_set(bits, population)
     budget = population_bits(population)
     if is_unique(bits, population):
         over = bits - budget
-        return f"{bits:.2f} bits — uniquely identifying, with {over:.2f} bits to spare"
+        return (
+            f"{bits:.2f} bits — enough to be unique in a population of "
+            f"{population:,}, with {over:.2f} to spare (uniqueness, not identification)"
+        )
     return f"{bits:.2f} of {budget:.2f} bits — {remaining:,.0f} people still match"

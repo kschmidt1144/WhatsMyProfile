@@ -1,4 +1,15 @@
-"""Turning collected signals into the one number the project is about."""
+"""Turning collected signals into the numbers the project is about.
+
+Three corrections from the research pass are enforced here rather than left to
+the reader (see docs/research/):
+
+- **Identifiers saturate, quasi-identifiers accumulate.** A username is a
+  primary key; adding bits to it is meaningless. Only QIs feed `combine()`.
+- **Entropy is capped by sample size.** Any figure near log2(sample_n) is
+  resolution-limited and flagged.
+- **Uniqueness is not identification.** The reported number is the first link
+  in a four-step chain, and the wording says so.
+"""
 
 from __future__ import annotations
 
@@ -12,53 +23,110 @@ from .config import WORLD_POPULATION
 class Identifiability:
     """How identifiable the collected evidence makes the subject.
 
-    Always a **lower bound**. `unmeasured` counts attributes present in the
-    warehouse that have no entropy figure yet; they contribute nothing to
-    `bits` even though they plainly leak something in reality. Reading this
-    number as "how exposed I am" is wrong — it is "how exposed I can already
-    prove I am".
+    Always a **lower bound on a bound**. `unmeasured` counts attributes with no
+    entropy figure — they contribute nothing even though they plainly leak
+    something. And the total itself is a composition bound, not an estimate:
+    real attributes correlate, which is what `redundancy` corrects for.
     """
 
     bits: float
     anonymity_set: float
     budget: float
     redundancy: float
-    measured: list[tuple[str, float]] = field(default_factory=list)
+    redundancy_source: str
+    population: int
+    # Identifiers found in the evidence. Any one of these ends the question
+    # independently of how many bits the quasi-identifiers add up to.
+    identifiers: list[str] = field(default_factory=list)
+    measured: list[tuple[str, float, int]] = field(default_factory=list)
     unmeasured: list[str] = field(default_factory=list)
+    resolution_limited: list[str] = field(default_factory=list)
+
+    @property
+    def saturated(self) -> bool:
+        """Whether a unique-by-construction identifier is present."""
+        return bool(self.identifiers)
 
     @property
     def unique(self) -> bool:
-        return entropy.is_unique(self.bits)
+        return self.saturated or entropy.is_unique(self.bits, self.population)
 
     def summary(self) -> str:
-        line = entropy.describe(self.bits, WORLD_POPULATION)
+        if self.saturated:
+            names = ", ".join(self.identifiers)
+            return (
+                f"Identified by construction: {names}. "
+                f"Quasi-identifiers add {self.bits:.2f} bits on top, which is "
+                f"redundant once a primary key is public."
+            )
+        line = entropy.describe(self.bits, self.population)
         if self.unmeasured:
-            line += f" (lower bound: {len(self.unmeasured)} attribute(s) not yet measured)"
+            line += f" — floor only, {len(self.unmeasured)} attribute(s) unmeasured"
         return line
 
 
-def identifiability(redundancy: float = 0.0, population: int = WORLD_POPULATION) -> Identifiability:
+def _resolve_redundancy(attributes: list[str]) -> tuple[float, str]:
+    """Pick a correlation discount, preferring a measured one over a guess.
+
+    The 0.80 figure was measured on browser-fingerprint attributes observed
+    together; applying it to attributes from a different surface would be
+    borrowing a constant that was never measured there.
+    """
+    namespaces = {a.split("/", 1)[0] for a in attributes}
+    if len(namespaces) == 1:
+        only = next(iter(namespaces))
+        if only in entropy.NAMESPACE_REDUNDANCY:
+            return entropy.NAMESPACE_REDUNDANCY[only], f"measured for '{only}/' attributes"
+    return 0.0, "assumed independent (upper bound — no measured value for this mix)"
+
+
+def identifiability(
+    redundancy: float | None = None, population: int = WORLD_POPULATION
+) -> Identifiability:
     """Score every distinct attribute collected so far, in bits."""
     frame = warehouse.query("SELECT DISTINCT attribute FROM signals ORDER BY attribute")
     attributes = list(frame["attribute"]) if not frame.empty else []
 
-    measured: list[tuple[str, float]] = []
+    identifiers: list[str] = []
+    measured: list[tuple[str, float, int]] = []
     unmeasured: list[str] = []
-    for attribute in attributes:
-        bits = catalog.known_bits(attribute)
-        if bits is None:
-            unmeasured.append(attribute)
-        else:
-            measured.append((attribute, bits))
+    limited: list[str] = []
 
-    total = entropy.combine([b for _, b in measured], redundancy=redundancy)
+    for attribute in attributes:
+        entry = catalog.get(attribute)
+        if entry is None:
+            unmeasured.append(attribute)
+            continue
+        if entry.kind == "identifier":
+            identifiers.append(attribute)
+            continue
+        if entry.kind == "attribute":
+            continue  # payload, not a key — never accumulated
+        if entry.entropy_bits is None or not entry.sample_n:
+            unmeasured.append(attribute)
+            continue
+        measured.append((attribute, entry.entropy_bits, entry.sample_n))
+        if entropy.resolution_limited(entry.entropy_bits, entry.sample_n):
+            limited.append(attribute)
+
+    resolved, source = (
+        (redundancy, "caller-supplied")
+        if redundancy is not None
+        else _resolve_redundancy([a for a, _, _ in measured])
+    )
+    total = entropy.combine([b for _, b, _ in measured], redundancy=resolved)
+
     return Identifiability(
         bits=total,
         anonymity_set=entropy.anonymity_set(total, population),
         budget=entropy.population_bits(population),
-        redundancy=redundancy,
-        measured=sorted(measured, key=lambda pair: pair[1], reverse=True),
+        redundancy=resolved,
+        redundancy_source=source,
+        population=population,
+        identifiers=sorted(identifiers),
+        measured=sorted(measured, key=lambda row: row[1], reverse=True),
         unmeasured=unmeasured,
+        resolution_limited=limited,
     )
 
 
@@ -79,11 +147,15 @@ def coverage() -> "list[dict]":
 def inference_gap() -> "list[dict]":
     """Claims derived about the subject, undisclosed ones first.
 
-    The undisclosed-and-correct rows are the finding this lab exists to count.
+    `verdict` and `effect` are independent: a claim can be wrong and still have
+    changed a price, an ad, or an offer. Undisclosed-and-correct is the finding
+    this lab exists to count; incorrect-and-operative is the one the industry
+    would rather not discuss.
     """
     frame = warehouse.query(
         """
-        SELECT claim, inferred_by, from_sources, disclosed, verdict, confidence, method
+        SELECT claim, inferred_by, from_sources, disclosed, verdict, effect,
+               confidence, method
         FROM inferences ORDER BY disclosed ASC, confidence DESC
         """
     )

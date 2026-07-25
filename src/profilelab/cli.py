@@ -6,8 +6,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import analysis, catalog, refresh as refresh_mod, sources, warehouse
-from .config import WORLD_POPULATION
+from . import analysis, catalog, entropy, refresh as refresh_mod, sources, warehouse
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -97,14 +96,20 @@ def coverage() -> None:
 def attributes() -> None:
     """The attribute registry: what each fact means and what it costs in bits."""
     table = Table(title="attributes", header_style="bold")
-    for column in ("attribute", "category", "sensitivity", "bits"):
+    for column in ("attribute", "kind", "category", "sensitivity", "bits", "sample n"):
         table.add_column(column)
     for entry in catalog.ATTRIBUTES:
         bits = f"{entry.entropy_bits:.2f}" if entry.entropy_bits is not None else "[dim]unmeasured[/dim]"
         sensitivity = entry.sensitivity
         if sensitivity != "public":
             sensitivity = f"[red]{sensitivity}[/red]"
-        table.add_row(entry.attribute, entry.category, sensitivity, bits)
+        kind = entry.kind
+        if kind == "identifier":
+            kind = f"[red]{kind}[/red]"
+        table.add_row(
+            entry.attribute, kind, entry.category, sensitivity, bits,
+            f"{entry.sample_n:,}" if entry.sample_n else "",
+        )
     console.print(table)
 
 
@@ -145,15 +150,19 @@ def inferences(
         console.print("[yellow]no inferences recorded yet[/yellow]")
         return
     table = Table(title="inference gap", header_style="bold")
-    for column in ("claim", "inferred by", "disclosed", "verdict", "confidence", "method"):
+    for column in ("claim", "inferred by", "disclosed", "verdict", "effect", "confidence", "method"):
         table.add_column(column)
     for row in rows:
         disclosed = "yes" if row["disclosed"] else "[red]no[/red]"
+        effect = str(row["effect"])
+        if effect == "observed":
+            effect = f"[red]{effect}[/red]"
         table.add_row(
             str(row["claim"]),
             str(row["inferred_by"]),
             disclosed,
             str(row["verdict"]),
+            effect,
             f"{row['confidence']:.2f}",
             str(row["method"] or ""),
         )
@@ -163,7 +172,7 @@ def inferences(
 @app.command("entropy")
 def entropy_cmd(
     redundancy: float = typer.Option(
-        0.0, "-r", "--redundancy", help="Correlation discount in [0,1]; 0 assumes independence."
+        None, "-r", "--redundancy", help="Correlation discount in [0,1]. Omit to use the measured default."
     ),
 ) -> None:
     """How identifiable the collected evidence makes you, in bits."""
@@ -171,16 +180,36 @@ def entropy_cmd(
     result = analysis.identifiability(redundancy=redundancy)
     console.print(f"\n[bold]{result.summary()}[/bold]")
     console.print(
-        f"[dim]budget {result.budget:.2f} bits (world population {WORLD_POPULATION:,}) · "
-        f"redundancy discount {result.redundancy:.0%}[/dim]\n"
+        f"[dim]budget {result.budget:.2f} bits (population {result.population:,}) · "
+        f"redundancy {result.redundancy:.0%} ({result.redundancy_source})[/dim]"
     )
+    console.print(
+        "[dim]chain: sample-unique → population-unique → linkable → identified. "
+        "This measures the first step only.[/dim]\n"
+    )
+    if result.identifiers:
+        console.print(
+            "[red]identifiers present[/red] [dim]— unique by construction, so the bits below "
+            "are moot for anyone who can read them:[/dim]"
+        )
+        console.print("[dim]  " + ", ".join(result.identifiers) + "[/dim]\n")
     if result.measured:
-        table = Table(title="measured attributes", header_style="bold")
+        table = Table(title="measured quasi-identifiers", header_style="bold")
         table.add_column("attribute")
         table.add_column("bits", justify="right")
-        for attribute, bits in result.measured:
-            table.add_row(attribute, f"{bits:.2f}")
+        table.add_column("sample n", justify="right")
+        table.add_column("ceiling", justify="right")
+        for attribute, bits, sample_n in result.measured:
+            ceiling = f"{entropy.sample_ceiling(sample_n):.2f}"
+            if attribute in result.resolution_limited:
+                ceiling = f"[yellow]{ceiling} ⚠[/yellow]"
+            table.add_row(attribute, f"{bits:.2f}", f"{sample_n:,}", ceiling)
         console.print(table)
+    if result.resolution_limited:
+        console.print(
+            "[yellow]⚠ at the sample ceiling[/yellow] [dim]— log2(n) bounds what a sample can "
+            "measure, so these are floors set by the study's size, not findings.[/dim]"
+        )
     if result.unmeasured:
         console.print(
             f"\n[yellow]{len(result.unmeasured)} attribute(s) carry no entropy figure yet[/yellow] "

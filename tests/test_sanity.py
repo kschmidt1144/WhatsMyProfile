@@ -100,7 +100,7 @@ def test_unmeasured_attributes_read_as_none_not_zero():
     """Treating unmeasured as 0.0 would silently understate every total."""
     assert catalog.known_bits("fp/canvas_hash") is None
     assert catalog.known_bits("nonexistent/attribute") is None
-    assert catalog.known_bits("fp/user_agent") == pytest.approx(10.0)
+    assert catalog.known_bits("fp/user_agent") == pytest.approx(4.613)
 
 
 def test_model_rejects_invalid_metadata():
@@ -109,9 +109,78 @@ def test_model_rejects_invalid_metadata():
     with pytest.raises(ValueError):
         Attribute("x/y", "X", category="device", sensitivity="very-secret")
     with pytest.raises(ValueError):
+        Attribute("x/y", "X", category="device", kind="primary-key")
+    with pytest.raises(ValueError):
         Signal("me", "id", "src", "x/y", "v", "now", "ev", confidence=1.5)
     with pytest.raises(ValueError):
         Inference("me", "claim", "by", "src", disclosed=False, verdict="maybe")
+    with pytest.raises(ValueError):
+        Inference("me", "claim", "by", "src", disclosed=False, effect="massive")
+
+
+def test_entropy_figure_requires_its_sample_size():
+    """A bits figure without sample_n cannot be read as a floor, so reject it."""
+    with pytest.raises(ValueError):
+        Attribute("x/y", "X", category="device", entropy_bits=4.0)
+    Attribute("x/y", "X", category="device", entropy_bits=4.0, sample_n=1000)  # fine
+
+
+def test_identifiers_are_marked_as_such():
+    """A username is a primary key, not a trait shared with a fraction of people."""
+    assert catalog.kind_of("github/login") == "identifier"
+    assert catalog.kind_of("github/email") == "identifier"
+    assert catalog.kind_of("fp/user_agent") == "quasi_identifier"
+    assert catalog.kind_of("inferred/timezone") == "attribute"
+
+
+# ── sample-size limits on entropy ────────────────────────────────────────────
+
+
+def test_sample_ceiling_is_log2_of_n():
+    assert entropy.sample_ceiling(1024) == pytest.approx(10.0)
+    assert entropy.sample_ceiling(8400) == pytest.approx(13.04, abs=0.01)
+    assert entropy.sample_ceiling(470_161) == pytest.approx(18.84, abs=0.01)
+
+
+def test_resolution_limited_flags_measurements_at_their_ceiling():
+    # 12.101 bits measured on n=8,400 (ceiling 13.04) is instrument-limited.
+    assert entropy.resolution_limited(12.101, 8400)
+    # 4.613 bits on the same sample has plenty of headroom.
+    assert not entropy.resolution_limited(4.613, 8400)
+
+
+def test_measured_redundancy_reproduces_the_joint_fingerprint_entropy():
+    """Pin the 0.80 default to the measurement it was derived from.
+
+    Berke et al. report 13 co-measured browser attributes plus the joint
+    entropy of the combined fingerprint. If combine() with MEASURED_REDUNDANCY
+    stops landing on their joint figure, the constant has drifted from its
+    source and the docs are lying.
+    """
+    berke = [a for a in catalog.ATTRIBUTES if a.sample_n == 8400 and a.entropy_bits is not None]
+    assert len(berke) == 13, "expected the 13 co-measured Berke attributes"
+
+    bits = [a.entropy_bits for a in berke]
+    assert sum(bits) == pytest.approx(33.45, abs=0.01)  # the naive, wrong answer
+    assert max(bits) == pytest.approx(6.833)
+
+    combined = entropy.combine(bits, redundancy=entropy.MEASURED_REDUNDANCY)
+    assert combined == pytest.approx(12.101, abs=0.1)  # the measured joint entropy
+
+
+def test_naive_summing_would_have_claimed_global_uniqueness():
+    """Why the redundancy discount is not optional.
+
+    Summed independently the fingerprint attributes come to ~33.45 bits, just
+    over the 32.93-bit world budget — i.e. the naive arithmetic claims every
+    browser on earth is uniquely identifiable among all humanity. The measured
+    joint entropy leaves an anonymity set in the thousands.
+    """
+    berke = [a.entropy_bits for a in catalog.ATTRIBUTES if a.sample_n == 8400 and a.entropy_bits]
+    assert entropy.is_unique(sum(berke), WORLD_POPULATION)  # the false claim
+    honest = entropy.combine(berke, redundancy=entropy.MEASURED_REDUNDANCY)
+    assert not entropy.is_unique(honest, WORLD_POPULATION)
+    assert entropy.anonymity_set(honest, WORLD_POPULATION) > 1_000_000
 
 
 # ── connector contract ───────────────────────────────────────────────────────

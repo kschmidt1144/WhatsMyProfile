@@ -56,7 +56,22 @@ uv run pytest                         # 33 tests, no network
   Callers must handle None and report it as a floor.
 - **Never sum bits across correlated attributes without a discount.**
   `entropy.combine(bits, redundancy)` exists for this; `redundancy=0` is an
-  upper bound on identifiability, not a neutral default.
+  upper bound on identifiability, not a neutral default. The measured value for
+  co-observed fingerprint attributes is `entropy.MEASURED_REDUNDANCY` (0.80) and
+  a test pins it to the study it came from — don't drift it.
+- **Identifiers saturate; only quasi-identifiers accumulate.** `Attribute.kind`
+  carries the distinction. Feeding an identifier into `combine()` is a category
+  error, not a conservative choice.
+- **`entropy_bits` cannot be set without `sample_n`** — the constructor rejects
+  it. Entropy is bounded by log₂(sample size), so a figure without its sample is
+  uninterpretable.
+- **Never say "identified" when you mean "unique".** The chain is
+  sample-unique → population-unique → linkable → identified, and this lab
+  measures step one. Wording that skips ahead is the exact error the mobility
+  literature was criticised for.
+- **Score identification and inference separately.** They decouple and can move
+  in opposite directions — a larger but more homogeneous anonymity set lowers
+  one and raises the other. See `docs/research/03-k-anonymity-and-dp.md`.
 - **The stray `~/Repos/.env`** would be swallowed by a bare `load_dotenv()`
   walking up the tree (see `~/Repos/CLAUDE.md`). `config.py` loads this repo's
   `.env` by explicit path — keep it that way.

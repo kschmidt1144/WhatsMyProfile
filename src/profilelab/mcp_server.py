@@ -34,14 +34,37 @@ def coverage_impl() -> str:
     return "\n".join(lines)
 
 
-def entropy_impl(redundancy: float = 0.0) -> str:
+def entropy_impl(redundancy: float | None = None) -> str:
     if not warehouse.exists():
         return _NO_DATA
     result = analysis.identifiability(redundancy=redundancy)
-    lines = [result.summary(), ""]
+    lines = [
+        result.summary(),
+        "",
+        f"redundancy {result.redundancy:.0%} ({result.redundancy_source})",
+        "Chain: sample-unique -> population-unique -> linkable -> identified. "
+        "This measures the first step only; uniqueness is not identification.",
+    ]
+    if result.identifiers:
+        lines += [
+            "",
+            "IDENTIFIERS PRESENT (unique by construction, so the bits are moot): "
+            + ", ".join(result.identifiers),
+        ]
     if result.measured:
-        lines.append("Measured attributes (bits):")
-        lines += [f"  {attribute}: {bits:.2f}" for attribute, bits in result.measured]
+        lines += ["", "Measured quasi-identifiers (bits, sample n):"]
+        lines += [
+            f"  {attribute}: {bits:.2f} (n={sample_n:,}"
+            + (", AT SAMPLE CEILING" if attribute in result.resolution_limited else "")
+            + ")"
+            for attribute, bits, sample_n in result.measured
+        ]
+    if result.resolution_limited:
+        lines += [
+            "",
+            "Figures marked AT SAMPLE CEILING are bounded by log2(sample size) — "
+            "the study ran out of resolution, so the true entropy is higher.",
+        ]
     if result.unmeasured:
         lines += [
             "",
@@ -60,11 +83,14 @@ def inferences_impl(undisclosed_only: bool = False) -> str:
         rows = [r for r in rows if not r["disclosed"]]
     if not rows:
         return "No inferences recorded."
-    lines = ["| claim | inferred by | disclosed | verdict | confidence | method |", "|---|---|---|---|---|---|"]
+    lines = [
+        "| claim | inferred by | disclosed | verdict | effect | confidence | method |",
+        "|---|---|---|---|---|---|---|",
+    ]
     for r in rows:
         lines.append(
             f"| {r['claim']} | {r['inferred_by']} | {'yes' if r['disclosed'] else 'NO'} | "
-            f"{r['verdict']} | {r['confidence']:.2f} | {r['method'] or ''} |"
+            f"{r['verdict']} | {r['effect']} | {r['confidence']:.2f} | {r['method'] or ''} |"
         )
     return "\n".join(lines)
 
@@ -89,10 +115,16 @@ def signals_impl(source: str | None = None, attribute: str | None = None, limit:
 
 
 def attributes_impl() -> str:
-    lines = ["| attribute | category | sensitivity | bits |", "|---|---|---|---|"]
+    lines = [
+        "| attribute | kind | category | sensitivity | bits | sample n |",
+        "|---|---|---|---|---|---|",
+    ]
     for entry in catalog.ATTRIBUTES:
         bits = f"{entry.entropy_bits:.2f}" if entry.entropy_bits is not None else "unmeasured"
-        lines.append(f"| {entry.attribute} | {entry.category} | {entry.sensitivity} | {bits} |")
+        lines.append(
+            f"| {entry.attribute} | {entry.kind} | {entry.category} | {entry.sensitivity} | "
+            f"{bits} | {entry.sample_n or ''} |"
+        )
     return "\n".join(lines)
 
 
@@ -112,13 +144,15 @@ def profile_coverage() -> str:
 
 
 @mcp.tool()
-def profile_entropy(redundancy: float = 0.0) -> str:
+def profile_entropy(redundancy: float = -1.0) -> str:
     """How identifiable the collected evidence makes the subject, in bits.
 
     redundancy (0-1) discounts for correlation between attributes; 0 assumes
-    independence and is an upper bound on identifiability.
+    independence and is an upper bound on identifiability. Pass -1 (default) to
+    use the measured per-namespace value. The result is uniqueness, not
+    identification — see the chain note in the output.
     """
-    return entropy_impl(redundancy)
+    return entropy_impl(None if redundancy < 0 else redundancy)
 
 
 @mcp.tool()

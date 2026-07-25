@@ -22,7 +22,11 @@ This is Eckersley's framing from *How Unique Is Your Web Browser?* (2010),
 generalised past the browser: any surface that emits attributes can be scored
 the same way, whether it is a TLS handshake or a GitHub commit history.
 
-Two deliberate constraints on the arithmetic:
+> **A literature pass on 2026-07-25 revised much of what follows.** Eight digs
+> are written up in [`research/`](research/); their corrections are folded in
+> below and enforced in `entropy.py` rather than left to the reader.
+
+Four deliberate constraints on the arithmetic:
 
 1. **Correlation.** Attributes are not independent, so summing bits overstates
    identifiability. `entropy.combine(bits, redundancy)` interpolates between
@@ -33,6 +37,17 @@ Two deliberate constraints on the arithmetic:
 2. **Unmeasured ≠ harmless.** `catalog.known_bits()` returns `None` rather than
    `0.0`. Unmeasured attributes are counted and reported separately so the
    headline figure is always explicitly a lower bound.
+3. **Entropy is capped by sample size.** You cannot measure more than `log₂(N)`
+   bits from a sample of N, so every published figure is a floor set by the
+   study's size. `entropy.sample_ceiling()` makes this checkable and
+   `Attribute.entropy_bits` cannot be set without its `sample_n`.
+   ([Dig 1](research/01-population-baseline.md))
+4. **Uniqueness is not identification.** Four results stand in a chain —
+   *sample-unique → population-unique → linkable → identified* — with attrition
+   at every arrow. This lab measures the first step. Claiming the last one from
+   it is the error Sánchez and Domingo-Ferrer levelled at the mobility
+   literature, and it was in our code.
+   ([Dig 4](research/04-behavioral-traces.md), [Dig 5](research/05-linkage.md))
 
 Direction of error matters more here than magnitude. A profile that says "you
 are anonymous" and is wrong is a far worse failure than one that is
@@ -61,8 +76,19 @@ genetics, biometrics, health, sex life or orientation. Inferring one of those
 is a categorically different event from inferring a favourite language, and the
 schema should not flatten the difference.
 
+`attributes.kind` distinguishes **identifier** (unique by construction —
+saturates, never accumulates), **quasi-identifier** (the only kind the bits
+arithmetic applies to), and **attribute** (the sensitive payload). Conflating
+them is why `wmp entropy` once reported 0.00 bits beside a visible username.
+([Dig 3](research/03-k-anonymity-and-dp.md))
+
 `inferences.disclosed` is the load-bearing flag. `disclosed = false` with
 `verdict = correct` is the result the project exists to count.
+
+`inferences.effect` is independent of `verdict`. Broker segments are frequently
+wrong — male-gender segments measure ~42.5% accurate — and act on you regardless,
+so *incorrect + observed* is a real and interesting cell, not a contradiction.
+([Dig 7](research/07-consequence.md))
 
 ## The four collection modes
 
@@ -122,44 +148,79 @@ has to be able to record one.
 
 ## Roadmap
 
+Revised after the research pass. The largest change: the inference layer and
+the linkage layer were separate phases on the assumption they were separate
+attacks. [Dig 6](research/06-inference-gap.md) shows LLM agents outperforming
+hand-tuned classical de-anonymization, so they are one phase now.
+
 - **Phase 0 — apparatus.** ✅ Warehouse, entropy engine, connector contract,
-  CLI, MCP server, GitHub connector, 33 offline tests.
-- **Phase 1 — broadcast half.** More connectors: blogs/writing, package
-  registries, WHOIS, search-engine footprint, LinkedIn export. Build the
-  identifier graph across them.
-- **Phase 2 — inference layer.** Multi-model profiling from public text only.
-  Measure the inference gap; use inter-model agreement as a recoverability
-  score. Add ground-truth capture so `verdict` can be scored rather than
-  assumed.
-- **Phase 3 — ambient half.** A local fingerprint probe page; re-measure the
-  2010 priors against a current population; tracker graph from a real session
-  via Playwright; ad-preference exports.
-- **Phase 4 — broker half.** Subject-access requests, tracked end to end.
-- **Phase 5 — the report.** Chaptered, every claim computed in-repo.
-- **Phase 6 — countermeasures.** The payoff: measure what actually reduces
-  bits. Most privacy advice is folklore, and some of it (rare browser
-  configurations, unusual fonts) demonstrably *raises* identifiability by
-  making you more distinctive. Test it instead of repeating it.
+  CLI, MCP server, GitHub connector, offline tests.
+- **Phase 0.5 — literature pass.** ✅ 2026-07-25. Eight digs, [`research/`](research/).
+  Corrections folded into the schema and the entropy engine.
+- **Phase 1 — ad-preference connectors.** The cheapest real inference data
+  available: Google My Ad Center, Meta ad topics, Amazon, LinkedIn, X each
+  publish their inferred profile of you on request. Cross-platform agreement on
+  an undisclosed attribute is a recoverability signal; divergence is a finding.
+- **Phase 2 — adversary dimension.** `adversaries` table, `signals.visible_to`,
+  per-adversary populations and linkage types, so "how many bits" acquires a
+  "to whom". Structural, and best done before more data lands.
+  ([Dig 2](research/02-adversary-model.md))
+- **Phase 3 — broadcast half + identifier graph.** Blogs, package registries,
+  WHOIS, LinkedIn export. `identities` gains `link_type`
+  (deterministic | probabilistic | inferred), confidence, and decay.
+- **Phase 4 — inference and linkage, merged.** Multi-model profiling from
+  public text; AUROC against base rate and normalised mutual information as the
+  metrics; ground-truth capture so `verdict` becomes measurable.
+- **Phase 5 — ambient half.** Local fingerprint probe; re-measure Berke's 2023
+  figures on a current sample; tracker graph via Playwright. Traces become
+  first-class — a sequence, not N loose signals.
+  ([Dig 4](research/04-behavioral-traces.md))
+- **Phase 6 — broker half.** Subject-access requests, tracked end to end,
+  scored against the measured segment-accuracy priors.
+- **Phase 7 — consequence.** Within-subject personalization experiments: does
+  the profile change the price? ([Dig 7](research/07-consequence.md))
+- **Phase 8 — the report.** Chaptered, every claim computed in-repo.
+- **Phase 9 — countermeasures.** The payoff, and the phase most likely to
+  produce negative results worth publishing. Every intervention scored on
+  *both* axes — identification and inference — because the browser
+  `deviceMemory` API is a documented case of a mitigation that lowered one and
+  raised the other. ([Dig 8](research/08-countermeasures.md))
 
 ## Open questions
 
-- **Identifiers are not attributes, and the engine currently conflates them.**
-  `wmp entropy` reports 0.00 bits on a fully-collected GitHub profile, because
-  no broadcast attribute has a measured entropy figure yet — correct under the
-  "unmeasured is not zero" rule, and obviously wrong to a reader who can see a
-  username sitting in the table. A GitHub login is unique *by construction*: it
-  is a primary key, worth the entire budget on its own, not a value shared with
-  some fraction of a population. The catalog needs to distinguish identifiers
-  (saturating) from attributes (accumulating) before any headline figure means
-  what it appears to mean.
-- What population do you measure `p` against? World population is the honest
-  denominator for a global attribute and badly wrong for a local one; the
-  anonymity set that matters is usually a subgroup, not humanity.
-- How do you estimate redundancy between attributes without a population
-  sample of your own? Literature covariances, or measure it in-repo?
-- Does the inference layer need the subject's ground truth to score itself, and
-  does storing that ground truth create a worse artifact than the one being
-  studied?
+**Resolved by the research pass:**
+
+- ~~Identifiers vs attributes.~~ Resolved via the anonymisation literature's
+  identifier / quasi-identifier / sensitive-attribute distinction. `Attribute.kind`
+  now carries it; identifiers saturate rather than accumulate.
+  ([Dig 3](research/03-k-anonymity-and-dp.md))
+- ~~Estimating redundancy without a sample of your own.~~ Berke et al. publish
+  both the individual and the *joint* entropy of 13 co-measured fingerprint
+  attributes — 33.45 summed against 12.101 jointly — which yields a measured
+  discount of 0.80. `entropy.MEASURED_REDUNDANCY`, pinned by a test.
+  ([Dig 1](research/01-population-baseline.md))
+
+**Still open:**
+
+- **What population do you measure `p` against?** Sharpened rather than solved:
+  the denominator is now known to be *adversary-relative*. A stranger needs
+  32.93 bits to find you among humanity; an employer needs 8.6 to find you among
+  400 staff. Phase 2 makes this explicit; until then the world figure is the
+  wrong default and is labelled as such.
+- **Should this compute an actual ε?** Our bits compose additively, which makes
+  the framework a privacy-loss accountant like differential privacy rather than
+  a release property like k-anonymity. Attractive — but our "queries" are
+  observations we never controlled, so the analogy may not survive contact.
+- **Ground truth is required to score inference, and storing it builds a better
+  dossier than the one under study.** Real tension, unresolved. It may argue for
+  scoring interactively and never persisting.
+- **l-diversity needs the composition of an anonymity set, not just its size.**
+  Berke's result — that a larger, more homogeneous crowd can *raise* inference
+  risk while lowering identification risk — cannot be represented in the current
+  schema at all.
+- **Does this repo's own existence change the measurement?** Publishing a public
+  repo about your own profile adds signal, and its commit timestamps leak the
+  same chronotype Finding 1 was about. The instrument is inside the system.
 
 ## Scope
 

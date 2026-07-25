@@ -1,78 +1,139 @@
 """The attribute registry — what a fact means, and what it is worth in bits.
 
-Two kinds of entry live here. Most are **structural**: they describe a fact a
-connector can emit, with entropy left `None` until this lab measures it.
-A few are **reference priors** from the fingerprinting literature, carried so
-that the ambient half has something to calibrate against on day one.
+Entries carry a `kind` (identifier saturates, quasi-identifier accumulates,
+attribute is the payload) and, where an entropy figure exists, the `sample_n`
+it was measured on. Entropy cannot exceed log2(sample_n), so a figure without
+its sample size is uninterpretable.
 
-⚠️ The reference priors are from Eckersley's 2010 Panopticlick sample and are
-carried as *history, not truth*. The browser landscape they describe is gone:
-NPAPI plugins were the single richest surface at 15.4 bits and are now extinct,
-while canvas, WebGL and audio fingerprinting — which that study predates
-entirely — carry much of the load today. Re-measuring these against a current
-population is Phase 3 work; until then, any figure sourced from them must be
-labelled as a 2010 estimate wherever it appears.
+**Primary reference: Berke et al. 2025 (PoPETs).** 8,400 US participants,
+December 2023, recruited through a paid panel rather than self-selection. This
+replaced Eckersley 2010 as the default after Dig 1 found that the classic
+figures come from volunteer samples of privacy-interested, tech-media readers
+and overstate uniqueness badly — 83.6–94.2% unique in Panopticlick and 89.4% in
+AmIUnique, against 33.6% when Gómez-Boix et al. measured ordinary traffic.
+
+⚠️ Two caveats travel with every number below.
+
+1. **They are floors.** 8,400 participants cap measurable entropy at 13.04 bits.
+   The measured joint fingerprint entropy of 12.101 sits just under that
+   ceiling, meaning the instrument ran out of resolution rather than finding
+   the answer.
+2. **They do not add.** The naive sum of the 13 attributes is 33.45 bits; the
+   measured joint entropy is 12.101. See `entropy.MEASURED_REDUNDANCY`.
+
+See docs/research/01-population-baseline.md.
 """
 
 from __future__ import annotations
 
 from .model import Attribute
 
-_ECKERSLEY = "Eckersley 2010, 'How Unique Is Your Web Browser?' (n≈470k) — 2010 sample, see module docstring"
+_BERKE = (
+    "Berke et al. 2025, 'How Unique is Whose Web Browser?' (PoPETs 2025(1):720-758), "
+    "n=8,400 US panel, Dec 2023 — sample-limited floor, ceiling log2(8400)=13.04 bits"
+)
+_BERKE_N = 8_400
+
+_ECKERSLEY = (
+    "Eckersley 2010, 'How Unique Is Your Web Browser?' (n=470,161) — HISTORICAL: "
+    "self-selected privacy-interested sample, superseded by Berke 2025"
+)
 
 ATTRIBUTES: tuple[Attribute, ...] = (
     # ── broadcast: the footprint you chose to publish ────────────────────────
-    Attribute("github/login", "GitHub login", "identity", unit_type="string"),
-    Attribute("github/name", "Display name", "identity", unit_type="string"),
-    Attribute("github/bio", "Profile bio", "social", unit_type="string"),
-    Attribute("github/company", "Stated employer", "professional", unit_type="string"),
+    # A login is unique by construction — it is a primary key, not a shared trait.
+    Attribute("github/login", "GitHub login", "identity", kind="identifier"),
+    Attribute("github/email", "Public email", "contact", kind="identifier", sensitivity="sensitive"),
+    Attribute("github/blog", "Linked website", "identity", kind="identifier", unit_type="url"),
+    Attribute("github/name", "Display name", "identity"),
+    Attribute("github/bio", "Profile bio", "social"),
+    Attribute("github/company", "Stated employer", "professional"),
     Attribute("github/location", "Stated location", "location", sensitivity="sensitive"),
-    Attribute("github/blog", "Linked website", "identity", unit_type="url"),
-    Attribute("github/email", "Public email", "contact", sensitivity="sensitive"),
     Attribute("github/created_at", "Account created", "identity", unit_type="timestamp"),
     Attribute("github/followers", "Follower count", "social", unit_type="number"),
     Attribute("github/public_repos", "Public repository count", "professional", unit_type="number"),
     Attribute("github/language", "Language used in public code", "professional", unit_type="enum"),
     Attribute("github/push_hour_utc", "Hour of day of a public push (UTC)", "behavior", unit_type="number"),
     # ── ambient: the surface you emit without choosing to ────────────────────
-    # Reference priors — see the warning above before quoting any of these.
+    # Measured values, Berke et al. 2025. Ordered by entropy, descending.
+    Attribute(
+        "fp/webgl_unmasked_renderer", "WebGL unmasked renderer", "device",
+        unit_type="hash", entropy_bits=6.833, sample_n=_BERKE_N, note=_BERKE,
+    ),
+    Attribute(
+        "fp/screen", "Screen resolution", "device",
+        entropy_bits=5.510, sample_n=_BERKE_N, note=_BERKE,
+    ),
     Attribute(
         "fp/user_agent", "User-Agent string", "device",
-        unit_type="string", entropy_bits=10.0, note=_ECKERSLEY,
+        entropy_bits=4.613, sample_n=_BERKE_N,
+        note=f"{_BERKE}. Sent in HTTP headers — passive, undetectable by the browser.",
     ),
     Attribute(
-        "fp/plugins", "Browser plugin list", "device",
-        unit_type="string", entropy_bits=15.4,
-        note=f"{_ECKERSLEY}. Historical: NPAPI plugins no longer exist in modern browsers.",
+        "fp/webgl_unmasked_vendor", "WebGL unmasked vendor", "device",
+        entropy_bits=3.313, sample_n=_BERKE_N, note=_BERKE,
     ),
     Attribute(
-        "fp/fonts", "Installed font list", "device",
-        unit_type="string", entropy_bits=13.9, note=_ECKERSLEY,
+        "fp/hardware_concurrency", "Logical CPU count", "device",
+        unit_type="number", entropy_bits=2.340, sample_n=_BERKE_N, note=_BERKE,
     ),
     Attribute(
-        "fp/screen", "Screen resolution and colour depth", "device",
-        unit_type="string", entropy_bits=4.83, note=_ECKERSLEY,
+        "fp/platform", "Platform string", "device",
+        entropy_bits=2.114, sample_n=_BERKE_N,
+        note=f"{_BERKE}. Low uniqueness but relatively high mutual information "
+             "for gender and age — weak for identification, useful for inference.",
     ),
     Attribute(
         "fp/timezone", "Reported timezone", "location",
-        unit_type="string", entropy_bits=3.04, sensitivity="sensitive", note=_ECKERSLEY,
+        sensitivity="sensitive", entropy_bits=2.064, sample_n=_BERKE_N, note=_BERKE,
     ),
     Attribute(
-        "fp/supercookies", "Supercookie support", "device",
-        unit_type="string", entropy_bits=2.12, note=_ECKERSLEY,
+        "fp/languages", "Accept-Language list", "device",
+        entropy_bits=1.730, sample_n=_BERKE_N,
+        note=f"{_BERKE}. Higher risk for Hispanic and non-White users: 'es-US' "
+             "speakers are 11% of the sample but >45% of that attribute value.",
     ),
     Attribute(
-        "fp/cookies_enabled", "Cookies enabled", "device",
-        unit_type="bool", entropy_bits=0.353, note=_ECKERSLEY,
+        "fp/device_memory", "Device memory (GB)", "device",
+        unit_type="number", entropy_bits=1.611, sample_n=_BERKE_N,
+        note=f"{_BERKE}. The API rounds to powers of 2 to REDUCE fingerprinting, "
+             "which bucketed users demographically instead: <$50k households are "
+             "35% of the sample and >60% of deviceMemory=2.0.",
     ),
-    # Surfaces that postdate the 2010 study — entropy to be measured here.
+    Attribute(
+        "fp/touch_points", "Max touch points", "device",
+        unit_type="number", entropy_bits=1.463, sample_n=_BERKE_N, note=_BERKE,
+    ),
+    Attribute(
+        "fp/webgl_renderer", "WebGL renderer", "device",
+        entropy_bits=0.782, sample_n=_BERKE_N, note=_BERKE,
+    ),
+    Attribute(
+        "fp/color_depth", "Colour depth", "device",
+        unit_type="number", entropy_bits=0.616, sample_n=_BERKE_N, note=_BERKE,
+    ),
+    Attribute(
+        "fp/webgl_vendor", "WebGL vendor", "device",
+        entropy_bits=0.465, sample_n=_BERKE_N, note=_BERKE,
+    ),
+    # Historical, retained for comparison only. NPAPI plugins no longer exist;
+    # this was the single richest surface in 2010 and is now worth nothing.
+    Attribute(
+        "fp/plugins", "Browser plugin list (historical)", "device",
+        entropy_bits=15.4, sample_n=470_161,
+        note=f"{_ECKERSLEY}. DEFUNCT: NPAPI plugins removed from modern browsers.",
+    ),
+    # Surfaces this lab has not measured. None, never 0.0.
     Attribute("fp/canvas_hash", "Canvas rendering hash", "device", unit_type="hash"),
-    Attribute("fp/webgl_hash", "WebGL renderer hash", "device", unit_type="hash"),
     Attribute("fp/audio_hash", "AudioContext fingerprint", "device", unit_type="hash"),
-    # ── inferred: what was concluded, not disclosed ──────────────────────────
-    Attribute("inferred/timezone", "Timezone inferred from activity", "inferred", sensitivity="sensitive"),
-    Attribute("inferred/employer", "Employer inferred from footprint", "inferred", sensitivity="sensitive"),
-    Attribute("inferred/interests", "Interest categories attributed to you", "inferred"),
+    Attribute("fp/fonts", "Installed font list", "device"),
+    # ── inferred: the payload, not the key ───────────────────────────────────
+    Attribute("inferred/timezone", "Timezone inferred from activity", "inferred",
+              kind="attribute", sensitivity="sensitive"),
+    Attribute("inferred/employer", "Employer inferred from footprint", "inferred",
+              kind="attribute", sensitivity="sensitive"),
+    Attribute("inferred/interests", "Interest categories attributed to you", "inferred",
+              kind="attribute"),
 )
 
 BY_ID: dict[str, Attribute] = {a.attribute: a for a in ATTRIBUTES}
@@ -91,3 +152,8 @@ def known_bits(attribute: str) -> float | None:
     """
     entry = BY_ID.get(attribute)
     return entry.entropy_bits if entry else None
+
+
+def kind_of(attribute: str) -> str | None:
+    entry = BY_ID.get(attribute)
+    return entry.kind if entry else None

@@ -29,6 +29,26 @@ SENSITIVITIES = frozenset({"public", "sensitive", "special"})
 
 UNIT_TYPES = frozenset({"string", "number", "hash", "bool", "enum", "timestamp", "url"})
 
+# The distinction the anonymisation literature makes and this schema originally
+# did not — see docs/research/03-k-anonymity-and-dp.md.
+#
+#   identifier       unique by construction (a login, an email). SATURATES the
+#                    budget on its own; there is nothing to accumulate.
+#   quasi_identifier not identifying alone, lethal in combination (ZIP + DOB +
+#                    sex). This is the only kind the bits arithmetic applies to.
+#   attribute        the sensitive payload an adversary wants, not the key they
+#                    use to find you.
+#
+# Conflating these is why `wmp entropy` once reported 0.00 bits while a
+# uniquely-identifying username sat in the table.
+KINDS = frozenset({"identifier", "quasi_identifier", "attribute"})
+
+# Whether a derived claim had a real downstream effect — independent of whether
+# it was correct. Broker segments are frequently wrong and operative anyway
+# (male-gender segments measured ~42.5% accurate), so accuracy alone does not
+# capture harm. See docs/research/07-consequence.md.
+EFFECTS = frozenset({"observed", "plausible", "none", "unknown"})
+
 # How a connector obtained its evidence. The four collection modes are the four
 # halves of the project (see docs/DESIGN.md).
 MODES = frozenset({"broadcast", "ambient", "broker", "inference"})
@@ -44,11 +64,16 @@ class Attribute:
     attribute: str  # namespaced: "github/login", "fp/canvas_hash"
     title: str
     category: str
+    kind: str = "quasi_identifier"
     sensitivity: str = "public"
     unit_type: str = "string"
     # Bits of surprisal this attribute carries in the general population.
     # None means unmeasured — never silently treated as zero.
     entropy_bits: float | None = None
+    # Size of the sample the entropy figure was measured on. Entropy cannot
+    # exceed log2(sample_n), so this is what makes a figure interpretable as a
+    # floor rather than a fact. See docs/research/01-population-baseline.md.
+    sample_n: int | None = None
     # Where an entropy figure came from, when it is a literature value rather
     # than something this lab measured. Load-bearing for honesty.
     note: str | None = None
@@ -56,12 +81,16 @@ class Attribute:
     def __post_init__(self) -> None:
         if self.category not in CATEGORIES:
             raise ValueError(f"{self.attribute}: unknown category {self.category!r}")
+        if self.kind not in KINDS:
+            raise ValueError(f"{self.attribute}: unknown kind {self.kind!r}")
         if self.sensitivity not in SENSITIVITIES:
             raise ValueError(f"{self.attribute}: unknown sensitivity {self.sensitivity!r}")
         if self.unit_type not in UNIT_TYPES:
             raise ValueError(f"{self.attribute}: unknown unit_type {self.unit_type!r}")
         if self.entropy_bits is not None and self.entropy_bits < 0:
             raise ValueError(f"{self.attribute}: entropy_bits must be non-negative")
+        if self.entropy_bits is not None and not self.sample_n:
+            raise ValueError(f"{self.attribute}: entropy_bits requires sample_n")
 
 
 @dataclass(frozen=True)
@@ -105,12 +134,17 @@ class Inference:
     # inference is the finding this whole project exists to count.
     disclosed: bool
     verdict: str = "unverifiable"
+    # Independent of `verdict`: did this claim change anything downstream?
+    # `incorrect` + `observed` is the interesting cell, not a contradiction.
+    effect: str = "unknown"
     confidence: float = 0.5
     method: str | None = None
 
     def __post_init__(self) -> None:
         if self.verdict not in VERDICTS:
             raise ValueError(f"unknown verdict {self.verdict!r}")
+        if self.effect not in EFFECTS:
+            raise ValueError(f"unknown effect {self.effect!r}")
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError(f"confidence must be in [0, 1], got {self.confidence!r}")
 

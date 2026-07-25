@@ -36,15 +36,22 @@ A 1-in-1000 font list is 9.97 bits. A timezone is about 3. Put them together
 and 8.2 billion people become roughly 200,000. That is the whole arithmetic,
 and `wmp entropy` reports it against everything collected so far.
 
-Two honesties are wired into the implementation:
+Four honesties are wired into the implementation, three of them added after a
+[literature pass](docs/research/) found the naive version overstates exposure:
 
-- **Independence is a lie.** Screen size correlates with OS, city with
-  language, push times with timezone. Naively summing bits overstates
-  identifiability, so `combine()` takes an explicit redundancy discount and can
-  never claim less than the strongest single attribute already proved.
+- **Independence is a lie.** Naively summing bits overstates identifiability.
+  How badly is measurable: 13 browser attributes sum to 33.45 bits and jointly
+  carry 12.10 — a factor of 2.6 million in anonymity-set terms. `combine()`
+  takes a redundancy discount whose default, 0.80, is derived from exactly that
+  measurement and pinned by a test.
 - **Unmeasured is not zero.** An attribute with no entropy figure contributes
-  nothing to the total and is reported separately, so the headline number is
-  always labelled as a floor rather than an estimate.
+  nothing and is reported separately, so the total is always a floor.
+- **Entropy is capped by sample size.** You cannot measure more than log₂(N)
+  bits from a sample of N. Every published fingerprint entropy is a floor set
+  by the study's size, and figures sitting at their ceiling are flagged.
+- **Uniqueness is not identification.** Four results stand in a chain —
+  *sample-unique → population-unique → linkable → identified* — with attrition
+  at every step. This lab measures the first and says so.
 
 ## The four halves
 
@@ -101,8 +108,17 @@ data, that is the one mistake a later commit cannot undo.
 ## Status
 
 Phase 0 (apparatus) is done: warehouse, entropy engine, connector contract,
-CLI, MCP server, one live connector. Design and roadmap in
-[`docs/DESIGN.md`](docs/DESIGN.md).
+CLI, MCP server, one live connector.
+
+Phase 0.5 is a literature pass — [eight digs](docs/research/) into the
+population-baseline problem, adversary modelling, k-anonymity and differential
+privacy, behavioural traces, record linkage, LLM inference, personalization
+consequence, and countermeasures. It corrected three live errors in the code
+and merged two roadmap phases, on the finding that LLM agents now outperform
+hand-tuned classical de-anonymization — which makes the linkage half and the
+inference half one attack rather than two.
+
+Design and roadmap in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Licence
 
