@@ -7,6 +7,8 @@ from rich.console import Console
 from rich.table import Table
 
 from . import analysis, catalog, entropy, refresh as refresh_mod, sources, warehouse
+from .sources import adprefs
+from .sources.adprefs import base as adprefs_base
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -74,6 +76,53 @@ def _require_warehouse() -> None:
     if not warehouse.exists():
         console.print("[yellow]no warehouse yet — run `wmp refresh` (and see `wmp sources`)[/yellow]")
         raise typer.Exit(1)
+
+
+@app.command()
+def exports() -> None:
+    """Where to request each platform's profile of you, and what has landed."""
+    root = adprefs_base.exports_root()
+    console.print(f"\n[bold]exports directory[/bold] [dim]{root}[/dim]")
+    console.print("[dim]override with WMP_EXPORTS_DIR · gitignored — never commit an archive[/dim]\n")
+
+    for module in adprefs.PLATFORMS:
+        found = adprefs_base.find_files(module.PLATFORM)
+        status = f"[green]{len(found)} file(s)[/green]" if found else "[yellow]not found[/yellow]"
+        console.print(f"[bold]{module.SOURCE}[/bold] — {module.TITLE}  {status}")
+        for path in found:
+            console.print(f"    [dim]{path}[/dim]")
+        if not found:
+            console.print(f"    [dim]{module.PLATFORM.how_to}[/dim]")
+            console.print(f"    [dim]looks for: {', '.join(module.PLATFORM.candidates)}[/dim]")
+        console.print()
+
+
+@app.command()
+def agreement(
+    min_platforms: int = typer.Option(
+        2, "-m", "--min-platforms", help="Only topics asserted by at least this many platforms."
+    ),
+) -> None:
+    """Cross-platform agreement on what you are interested in."""
+    _require_warehouse()
+    rows = analysis.platform_agreement(min_platforms=min_platforms)
+    if not rows:
+        console.print(
+            "[yellow]no ad-preference data yet[/yellow] [dim]— see `wmp exports`. "
+            "Cross-platform comparison needs at least two platforms loaded.[/dim]"
+        )
+        return
+    table = Table(title=f"topics asserted by ≥{min_platforms} platform(s)", header_style="bold")
+    for column in ("topic", "platforms", "sources", "facet"):
+        table.add_column(column)
+    for row in rows:
+        table.add_row(str(row["topic"]), str(row["platforms"]), str(row["sources"]), str(row["facet"]))
+    console.print(table)
+    console.print(
+        "[dim]Convergence across platforms means an attribute is genuinely recoverable "
+        "from behaviour. Divergence means at least one of them is wrong — which, given "
+        "measured segment accuracy, is the expected case.[/dim]"
+    )
 
 
 @app.command()

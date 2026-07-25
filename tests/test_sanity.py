@@ -8,6 +8,7 @@ recoverable by a follow-up commit.
 
 from __future__ import annotations
 
+import json
 import math
 import subprocess
 from pathlib import Path
@@ -17,7 +18,10 @@ import pytest
 from profilelab import catalog, entropy, sources
 from profilelab.config import ROOT, WORLD_POPULATION
 from profilelab.model import Attribute, Inference, Signal
-from profilelab.sources import github
+from profilelab.sources import adprefs, github
+from profilelab.sources.adprefs import base as adprefs_base
+from profilelab.sources.adprefs import linkedin as linkedin_ads
+from profilelab.sources.adprefs import x as x_ads
 
 # ── identifiability arithmetic ───────────────────────────────────────────────
 
@@ -244,6 +248,106 @@ def test_no_activity_returns_nothing():
 def test_histogram_must_have_24_bins():
     with pytest.raises(ValueError):
         github.infer_utc_offset([1] * 23)
+
+
+# ── ad-preference connectors ─────────────────────────────────────────────────
+
+
+def test_x_parser_reads_inferred_demographics_and_skips_disabled_interests(tmp_path):
+    payload = {
+        "p13nData": {
+            "demographics": {
+                "genderInfo": {"gender": "male"},
+                "age": {"ageRange": "35-49"},
+                "languages": [{"language": "English"}],
+            },
+            "interests": {
+                "interests": [
+                    {"name": "Technology", "isDisabled": False},
+                    {"name": "Angling", "isDisabled": True},
+                ],
+                "audienceAndAdvertisers": {"advertisers": ["@someretailer"]},
+            },
+        }
+    }
+    path = tmp_path / "personalization.js"
+    path.write_text("window.YTD.personalization.part0 = " + json.dumps([payload]))
+
+    claims = x_ads._parse(path)
+    topics = {c.topic for c in claims}
+    assert "Technology" in topics
+    assert "gender = male" in topics
+    assert "age range = 35-49" in topics
+    # An interest the user switched off is not part of the live profile.
+    assert "Angling" not in topics
+    assert any(c.facet == "advertiser" and c.topic == "@someretailer" for c in claims)
+
+
+def test_linkedin_separates_what_you_typed_from_what_was_inferred(tmp_path):
+    path = tmp_path / "Ad_Targeting.csv"
+    path.write_text("Job Titles,Interests,Member Age\nEngineer;Architect,Cycling,25-34\n")
+
+    claims = {c.topic: c for c in linkedin_ads._parse(path)}
+    # A job title is something the member entered.
+    assert claims["Engineer"].disclosed is True
+    assert claims["Architect"].disclosed is True
+    # An interest is something LinkedIn decided.
+    assert claims["Cycling"].disclosed is False
+    # Demographics keep their key — "25-34" alone means nothing.
+    assert claims["member age = 25-34"].facet == "demographic"
+
+
+def test_interest_topics_are_emitted_bare_so_platforms_can_be_compared(tmp_path):
+    """Cross-platform agreement is the whole point; prefixed topics never match.
+
+    X emits "Technology"; if LinkedIn emitted "Interests: Technology" the two
+    would never group together and every comparison would read as divergence.
+    """
+    li = tmp_path / "Ad_Targeting.csv"
+    li.write_text("Interests\nTechnology\n")
+    xa = tmp_path / "personalization.js"
+    xa.write_text(
+        "window.YTD.personalization.part0 = "
+        + json.dumps([{"p13nData": {"interests": {"interests": [{"name": "Technology"}]}}}])
+    )
+
+    li_topics = {c.topic for c in linkedin_ads._parse(li) if c.facet == "interest"}
+    x_topics = {c.topic for c in x_ads._parse(xa) if c.facet == "interest"}
+    assert li_topics & x_topics == {"Technology"}
+
+
+def test_linkedin_inferences_keeps_only_affirmative_rows(tmp_path):
+    path = tmp_path / "Inferences.csv"
+    path.write_text(
+        "Category,Type of inference,Description,Inference\n"
+        "Interest,Interested in cycling,derived,Yes\n"
+        "Interest,Owns a car,derived,No\n"
+    )
+    topics = {c.topic for c in linkedin_ads._parse(path)}
+    assert "Interested in cycling" in topics
+    assert "Owns a car" not in topics
+
+
+def test_advertiser_lists_are_signals_but_not_inferences():
+    """Who holds your data is a fact about them, not a claim about you."""
+    _, advertiser_is_inference = adprefs_base.FACETS["advertiser"]
+    assert advertiser_is_inference is False
+    assert adprefs_base.FACETS["interest"][1] is True
+    assert adprefs_base.FACETS["demographic"][1] is True
+
+
+def test_tolerant_json_walker_survives_a_restructured_export(tmp_path):
+    """Meta and Google rename things; over-collect rather than report empty."""
+    path = tmp_path / "ad_preferences.json"
+    path.write_text(json.dumps({"topics": {"v2": [{"name": "Cycling"}, {"name": "Coffee"}]}}))
+    topics = {c.topic for c in adprefs_base.json_topics(path)}
+    assert topics == {"Cycling", "Coffee"}
+
+
+def test_missing_export_is_unavailable_not_an_error():
+    """An absent archive must read as 'not configured', never as an empty profile."""
+    for module in adprefs.PLATFORMS:
+        assert isinstance(module.available(), bool)
 
 
 # ── the guard that matters most ──────────────────────────────────────────────

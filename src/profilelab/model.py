@@ -18,7 +18,13 @@ from dataclasses import dataclass, field
 
 # An attribute's category — what surface of a life it describes.
 CATEGORIES = frozenset(
-    {"identity", "contact", "device", "location", "behavior", "social", "professional", "inferred"}
+    {
+        "identity", "contact", "device", "location", "behavior", "social",
+        "professional", "inferred",
+        # Commercial relationships and targeting: who holds your data, which
+        # audiences you were placed in, what you were sold as.
+        "commercial",
+    }
 )
 
 # Sensitivity tiers. "special" is GDPR Article 9 — race, politics, religion,

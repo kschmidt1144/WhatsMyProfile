@@ -58,9 +58,22 @@ Four honesties are wired into the implementation, three of them added after a
 | Mode | What it collects | Status |
 |---|---|---|
 | **broadcast** | The footprint you published: GitHub, writing, package registries, WHOIS | GitHub live |
-| **ambient** | The surface you emit without choosing to: fingerprint entropy, tracker graphs, ad-preference dumps | planned |
+| **inference** | What systems conclude about you: five platforms' own ad-preference profiles, and later what a frontier model derives from public text | 5 connectors live |
+| **ambient** | The surface you emit without choosing to: fingerprint entropy, tracker graphs | planned |
 | **broker** | What the data-brokerage industry sells about you, obtained via subject-access requests | planned |
-| **inference** | What a frontier model concludes about you from public text alone | planned |
+
+### The platforms will tell you, if you ask
+
+Google, Meta, LinkedIn, X and Amazon each publish their inferred profile of you
+— but only to you, behind a login, as a bulk archive. So those five connectors
+parse **exports** rather than call APIs. `wmp exports` prints where to request
+each one and reports what has landed; `wmp agreement` then compares them.
+
+The comparison is the point. Where several platforms independently converge on
+an attribute you never disclosed, it is genuinely recoverable from behaviour.
+Where they diverge, at least one is selling something false — and given that
+commercial gender segments measure around 42.5% accurate, divergence is the
+expected case rather than the anomaly.
 
 ## Quickstart
 
@@ -68,12 +81,14 @@ Four honesties are wired into the implementation, three of them added after a
 uv sync
 cp .env.example .env          # set WMP_GITHUB_LOGIN
 uv run wmp sources            # what's configured
+uv run wmp exports            # how to request each platform's profile of you
 uv run wmp refresh            # collect -> tidy parquet -> warehouse
 uv run wmp coverage           # what landed
 uv run wmp entropy            # how identifiable that makes you
 uv run wmp inferences --undisclosed   # what was derived, not disclosed
+uv run wmp agreement          # which topics several platforms agree on
 uv run wmp sql "SELECT * FROM profile WHERE sensitivity != 'public'"
-uv run pytest                 # 33 tests, offline
+uv run pytest                 # 46 tests, offline
 ```
 
 ## Finding 1: the method was wrong, and wrong in a useful direction

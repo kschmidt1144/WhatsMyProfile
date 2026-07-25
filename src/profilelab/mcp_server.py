@@ -95,6 +95,30 @@ def inferences_impl(undisclosed_only: bool = False) -> str:
     return "\n".join(lines)
 
 
+def agreement_impl(min_platforms: int = 2) -> str:
+    if not warehouse.exists():
+        return _NO_DATA
+    rows = analysis.platform_agreement(min_platforms=min_platforms)
+    if not rows:
+        return (
+            "No ad-preference topics meet that threshold. Load platform exports first "
+            "(`wmp exports` lists how to request each one); cross-platform comparison "
+            "needs at least two platforms."
+        )
+    lines = ["| topic | platforms | sources | facet |", "|---|---|---|---|"]
+    lines += [
+        f"| {r['topic']} | {r['platforms']} | {r['sources']} | {r['facet']} |" for r in rows
+    ]
+    lines.append("")
+    lines.append(
+        "Convergence across independent platforms indicates an attribute is genuinely "
+        "recoverable from behaviour. Divergence means at least one platform is wrong — "
+        "commercial segments measure poorly (~42.5% accurate for male gender), so "
+        "disagreement is the expected case."
+    )
+    return "\n".join(lines)
+
+
 def signals_impl(source: str | None = None, attribute: str | None = None, limit: int = 50) -> str:
     if not warehouse.exists():
         return _NO_DATA
@@ -163,6 +187,16 @@ def profile_inferences(undisclosed_only: bool = False) -> str:
     the subject never published anywhere.
     """
     return inferences_impl(undisclosed_only)
+
+
+@mcp.tool()
+def profile_agreement(min_platforms: int = 2) -> str:
+    """Ad-preference topics ranked by how many platforms independently assert them.
+
+    Where several platforms converge on an undisclosed attribute, it is genuinely
+    recoverable from behaviour rather than one system's guess.
+    """
+    return agreement_impl(min_platforms)
 
 
 @mcp.tool()

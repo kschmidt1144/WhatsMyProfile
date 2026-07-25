@@ -144,6 +144,32 @@ def coverage() -> "list[dict]":
     return frame.to_dict("records")
 
 
+def platform_agreement(min_platforms: int = 1) -> "list[dict]":
+    """Ad-preference topics, ranked by how many platforms independently assert them.
+
+    The comparison is the point. A topic several platforms converge on
+    independently is genuinely recoverable from behaviour; one that appears on a
+    single platform is either that platform's private observation or its
+    private mistake. Given the measured accuracy of commercial segments — male
+    gender at ~42.5% — divergence is the expected case, not the anomaly.
+    """
+    frame = warehouse.query(
+        """
+        SELECT LOWER(value)                  AS topic,
+               COUNT(DISTINCT source)        AS platforms,
+               STRING_AGG(DISTINCT source, ', ') AS sources,
+               MIN(attribute)                AS facet
+        FROM signals
+        WHERE attribute LIKE 'adprefs/%'
+        GROUP BY 1
+        HAVING COUNT(DISTINCT source) >= ?
+        ORDER BY platforms DESC, topic
+        """,
+        [min_platforms],
+    )
+    return frame.to_dict("records")
+
+
 def inference_gap() -> "list[dict]":
     """Claims derived about the subject, undisclosed ones first.
 

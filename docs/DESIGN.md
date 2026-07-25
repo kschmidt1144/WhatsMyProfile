@@ -157,10 +157,11 @@ hand-tuned classical de-anonymization, so they are one phase now.
   CLI, MCP server, GitHub connector, offline tests.
 - **Phase 0.5 — literature pass.** ✅ 2026-07-25. Eight digs, [`research/`](research/).
   Corrections folded into the schema and the entropy engine.
-- **Phase 1 — ad-preference connectors.** The cheapest real inference data
-  available: Google My Ad Center, Meta ad topics, Amazon, LinkedIn, X each
-  publish their inferred profile of you on request. Cross-platform agreement on
-  an undisclosed attribute is a recoverability signal; divergence is a finding.
+- **Phase 1 — ad-preference connectors.** ✅ Five export-file connectors
+  (`x_ads`, `linkedin_ads`, `meta_ads`, `google_ads`, `amazon_ads`), `wmp exports`
+  for requesting archives, `wmp agreement` for cross-platform convergence.
+  Remaining: load real archives, and normalise demographic keys across
+  platforms so "gender = male" and "member gender = Male" compare.
 - **Phase 2 — adversary dimension.** `adversaries` table, `signals.visible_to`,
   per-adversary populations and linkage types, so "how many bits" acquires a
   "to whom". Structural, and best done before more data lands.

@@ -127,6 +127,17 @@ ATTRIBUTES: tuple[Attribute, ...] = (
     Attribute("fp/canvas_hash", "Canvas rendering hash", "device", unit_type="hash"),
     Attribute("fp/audio_hash", "AudioContext fingerprint", "device", unit_type="hash"),
     Attribute("fp/fonts", "Installed font list", "device"),
+    # ── ad preferences: the platforms' own profile of you ────────────────────
+    # These are the payload an adversary wants, not keys used to find you, so
+    # they never accumulate into an identifiability total.
+    Attribute("adprefs/interest", "Interest attributed to you by a platform", "inferred",
+              kind="attribute"),
+    Attribute("adprefs/demographic", "Demographic a platform inferred", "inferred",
+              kind="attribute", sensitivity="sensitive"),
+    Attribute("adprefs/audience", "Audience segment you were placed in", "commercial",
+              kind="attribute"),
+    Attribute("adprefs/advertiser", "Advertiser holding or targeting your data", "commercial",
+              kind="attribute"),
     # ── inferred: the payload, not the key ───────────────────────────────────
     Attribute("inferred/timezone", "Timezone inferred from activity", "inferred",
               kind="attribute", sensitivity="sensitive"),

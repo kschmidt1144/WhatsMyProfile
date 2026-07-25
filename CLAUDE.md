@@ -14,15 +14,17 @@ patterns transfer directly.
 ```bash
 uv sync
 uv run wmp sources                    # connectors + whether each is configured
+uv run wmp exports                    # ad-preference archives: how to request, what landed
 uv run wmp refresh                    # collect all -> tidy parquet -> warehouse
 uv run wmp refresh -s github --force  # one source, re-download
 uv run wmp coverage                   # what's collected, by source
 uv run wmp entropy [-r 0.3]           # identifiability in bits (-r = redundancy discount)
 uv run wmp inferences --undisclosed   # the inference gap
+uv run wmp agreement [-m 2]           # cross-platform topic convergence
 uv run wmp signals -a location        # filter by attribute substring
 uv run wmp attributes                 # the registry + reference entropies
 uv run wmp sql "SELECT ..."           # read-only; tables below
-uv run pytest                         # 33 tests, no network
+uv run pytest                         # 46 tests, no network
 ```
 
 ## Architecture
@@ -41,6 +43,13 @@ uv run pytest                         # 33 tests, no network
   `parse() -> Collected`. Shared helpers live in `sources/base.py`, **not** in
   `sources/__init__.py` — the `__init__` imports connectors to build the
   registry, so importing from it inside a connector is a circular import.
+- `sources/adprefs/` — the five ad-preference platforms. **Export-file
+  connectors, not APIs**: the data is only available behind a login as a bulk
+  archive, so `fetch()` touches no network and instead locates the archive
+  under `WMP_EXPORTS_DIR` (default `data/exports/`) and hashes it for
+  provenance. Each platform declares *candidate* glob patterns because export
+  formats drift constantly; parsers are defensive and `wmp exports` reports what
+  was searched for.
 - `entropy.py` is the spine; `analysis.py` turns signals into an
   `Identifiability`; `mcp_server.py` wraps testable `*_impl` functions.
 
@@ -83,6 +92,16 @@ uv run pytest                         # 33 tests, no network
   `unverifiable` on purpose. Do not tune the constant to fit one subject.
 - **Connector `parse()` must not touch the network** — it reads only what
   `fetch()` wrote. That is what keeps the suite offline and CI green.
+- **Ad-preference interest topics are emitted bare**, not prefixed with their
+  source column. `Interests: Technology` would never group with X's
+  `Technology`, so every cross-platform comparison would read as divergence.
+  Demographics keep their key (`member age = 35-44`) because the value alone is
+  meaningless. Normalising demographic keys *across* platforms is unsolved.
+- **A missing export must read as "not configured", never as an empty profile.**
+  The difference between "no data" and "no interests inferred" is the whole
+  finding; `available()` returning False is what keeps them apart.
+- **Advertiser lists are signals, not inferences** — who holds your data is a
+  fact about them, not a claim about you. `adprefs/base.FACETS` encodes this.
 
 ## Scope
 
