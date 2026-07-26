@@ -131,6 +131,92 @@ def identifiability(
     )
 
 
+@dataclass
+class Dossier:
+    """What is out there, who holds it, what it says, and what it is used for.
+
+    The lab's primary view. Note what it deliberately does not report: whether
+    any of it is *correct*. Accuracy is a separate and much narrower question —
+    a profile that is wrong is still held, still sold, and still acted on, so
+    an inventory that only counted the true parts would understate the thing
+    being inventoried.
+    """
+
+    disclosed: list[dict] = field(default_factory=list)
+    held: list[dict] = field(default_factory=list)
+    holders: list[dict] = field(default_factory=list)
+    claims: list[dict] = field(default_factory=list)
+    dark: list[dict] = field(default_factory=list)
+
+    @property
+    def disclosed_count(self) -> int:
+        return sum(row["signals"] for row in self.disclosed)
+
+    @property
+    def held_count(self) -> int:
+        return sum(row["signals"] for row in self.held)
+
+
+def _source_modes() -> dict[str, str]:
+    """source -> collection mode, from the connector registry."""
+    from . import reading, sources
+
+    modes = {name: module.MODE for name, module in sources.REGISTRY.items()}
+    modes[reading.SOURCE] = "inference"
+    return modes
+
+
+def dossier() -> Dossier:
+    """Assemble the inventory."""
+    modes = _source_modes()
+    by_source = warehouse.query(
+        """
+        SELECT source, attribute, COUNT(*) AS signals
+        FROM signals GROUP BY 1, 2 ORDER BY 1, 3 DESC
+        """
+    )
+
+    result = Dossier()
+    for row in by_source.to_dict("records"):
+        row["mode"] = modes.get(row["source"], "unknown")
+        # `broadcast` is what you published yourself; every other mode is
+        # something a system assembled about you.
+        (result.disclosed if row["mode"] == "broadcast" else result.held).append(row)
+
+    # Who holds it. Advertisers are the only holders the data names directly;
+    # the platform that exported them is a holder by construction.
+    advertisers = warehouse.query(
+        """
+        SELECT source, value AS holder
+        FROM signals WHERE attribute = 'adprefs/advertiser' ORDER BY value
+        """
+    ).to_dict("records")
+    platforms = warehouse.query(
+        "SELECT DISTINCT source FROM signals ORDER BY source"
+    ).to_dict("records")
+    result.holders = [
+        {"holder": p["source"], "via": "collected directly", "kind": "platform"} for p in platforms
+    ] + [
+        {"holder": a["holder"], "via": f"reached you via {a['source']}", "kind": "advertiser"}
+        for a in advertisers
+    ]
+
+    # What it says about you.
+    result.claims = warehouse.query(
+        """
+        SELECT inferred_by, claim, disclosed, effect, confidence
+        FROM inferences ORDER BY inferred_by, claim
+        """
+    ).to_dict("records")
+
+    # What is still dark — surfaces the lab knows about but has not collected.
+    collected = {p["source"] for p in platforms}
+    for name, mode in sorted(modes.items()):
+        if name not in collected:
+            result.dark.append({"source": name, "mode": mode})
+    return result
+
+
 def coverage() -> "list[dict]":
     """What has been collected, by source."""
     frame = warehouse.query(

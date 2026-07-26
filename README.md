@@ -18,8 +18,14 @@ exports that, because it was never a field.
 
 So the question this repo asks is not *what did I disclose?* It is:
 
-**How much of me is recoverable, by whom, and how far does what they infer
-exceed what I ever said?**
+**What is out there, who is holding it, what does it say about me, and what is
+it used for?**
+
+Note what that deliberately leaves out: whether any of it is *correct*. A
+profile that is wrong is still held, still sold, and still acted on — an
+inventory that counted only the true parts would understate the thing being
+inventoried. `wmp dossier` reports what exists; accuracy is a separate and much
+narrower question the lab can answer but does not lead with.
 
 Every claim in this repo is computed from evidence collected in this repo, and
 every observation traces back to the bytes it came from — a manifest with a URL
@@ -80,6 +86,7 @@ expected case rather than the anomaly.
 ```bash
 uv sync
 cp .env.example .env          # set WMP_GITHUB_LOGIN
+uv run wmp dossier            # ← the main view: what's out there, who holds it
 uv run wmp sources            # what's configured
 uv run wmp exports            # how to request each platform's profile of you
 uv run wmp refresh            # collect -> tidy parquet -> warehouse

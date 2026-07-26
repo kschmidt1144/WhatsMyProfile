@@ -438,6 +438,32 @@ def test_wilson_interval_stays_in_bounds_at_extremes():
         analysis.wilson_interval(0, 0)
 
 
+# ── the dossier ──────────────────────────────────────────────────────────────
+
+
+def test_disclosed_and_held_split_follows_collection_mode():
+    """`broadcast` is what you published; every other mode was assembled.
+
+    The split is the dossier's spine — if a source's MODE were misread, an
+    inference would be filed as something the subject published themselves.
+    """
+    source = inspect.getsource(analysis.dossier)
+    assert 'row["mode"] == "broadcast"' in source
+    assert "result.disclosed if" in source
+
+
+def test_every_registered_source_has_a_known_mode():
+    modes = analysis._source_modes()
+    assert modes, "no sources registered"
+    for name, mode in modes.items():
+        assert mode in {"broadcast", "ambient", "broker", "inference"}, f"{name}: {mode}"
+
+
+def test_llm_reading_counts_as_assembled_not_published():
+    """A model's conclusions about you are not something you disclosed."""
+    assert analysis._source_modes()[reading.SOURCE] == "inference"
+
+
 # ── LLM readings ─────────────────────────────────────────────────────────────
 
 

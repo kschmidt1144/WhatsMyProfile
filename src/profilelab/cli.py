@@ -128,6 +128,72 @@ def agreement(
 
 
 @app.command()
+def dossier(
+    holders: bool = typer.Option(False, "--holders", help="List every named holder in full."),
+) -> None:
+    """What is out there, who holds it, what it says, and what it is used for."""
+    _require_warehouse()
+    d = analysis.dossier()
+
+    console.print("\n[bold]WHAT YOU PUBLISHED[/bold]")
+    if d.disclosed:
+        for row in d.disclosed:
+            console.print(f"  {row['attribute']:<34} [dim]{row['signals']} · {row['source']}[/dim]")
+        console.print(f"  [dim]{d.disclosed_count} signal(s) you put out yourself[/dim]")
+    else:
+        console.print("  [dim]nothing collected from broadcast sources yet[/dim]")
+
+    console.print("\n[bold]WHAT WAS ASSEMBLED ABOUT YOU[/bold]")
+    for row in d.held:
+        console.print(
+            f"  [red]{row['attribute']:<34}[/red] [dim]{row['signals']} · "
+            f"{row['source']} ({row['mode']})[/dim]"
+        )
+    if not d.held:
+        console.print("  [dim]nothing yet[/dim]")
+
+    platforms = [h for h in d.holders if h["kind"] == "platform"]
+    advertisers = [h for h in d.holders if h["kind"] == "advertiser"]
+    console.print(f"\n[bold]WHO HOLDS IT[/bold] [dim]({len(d.holders)} named)[/dim]")
+    for row in platforms:
+        console.print(f"  [bold]{row['holder']}[/bold] [dim]— {row['via']}[/dim]")
+    if advertisers:
+        console.print(f"  [bold]{len(advertisers)} advertisers[/bold] [dim]reached you[/dim]")
+        shown = advertisers if holders else advertisers[:12]
+        console.print("[dim]  " + ", ".join(a["holder"] for a in shown) + "[/dim]")
+        if not holders and len(advertisers) > len(shown):
+            console.print(f"[dim]  …and {len(advertisers) - len(shown)} more — `--holders`[/dim]")
+
+    console.print(f"\n[bold]WHAT IT SAYS ABOUT YOU[/bold] [dim]({len(d.claims)} claims)[/dim]")
+    by_who: dict[str, int] = {}
+    for claim in d.claims:
+        by_who[str(claim["inferred_by"])] = by_who.get(str(claim["inferred_by"]), 0) + 1
+    for who, count in sorted(by_who.items(), key=lambda kv: -kv[1]):
+        console.print(f"  {who:<28} [dim]{count} claim(s)[/dim] [dim]— `wmp inferences`[/dim]")
+
+    console.print("\n[bold]HOW IT IS USED[/bold]")
+    observed = sum(1 for c in d.claims if c["effect"] == "observed")
+    if observed:
+        console.print(
+            f"  [red]{observed} claim(s) reached an ad-targeting system[/red] "
+            "[dim]— that is a use you can observe, by construction[/dim]"
+        )
+    console.print(
+        "  [dim]Resale, scoring, pricing and eligibility use are NOT measured here. "
+        "Seeing those needs subject-access requests (Phase 6).[/dim]"
+    )
+
+    if d.dark:
+        console.print(f"\n[bold]WHAT IS STILL DARK[/bold] [dim]({len(d.dark)} surfaces)[/dim]")
+        for row in d.dark:
+            console.print(f"  [yellow]{row['source']:<20}[/yellow] [dim]{row['mode']}[/dim]")
+        console.print(
+            "  [dim]Absence here is not evidence of absence out there — it is "
+            "evidence this lab has not looked yet.[/dim]"
+        )
+
+
+@app.command()
 def read(
     model: str = typer.Option(reading.DEFAULT_MODEL, "-m", "--model"),
     exclude: str = typer.Option(

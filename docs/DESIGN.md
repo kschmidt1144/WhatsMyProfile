@@ -225,6 +225,52 @@ Three consequences for the lab:
    respect to truth and was not. Report interim accuracy with its interval, or
    not at all.
 
+### Finding 3 — the disclosure gap, and who the advertiser list gives away
+
+The lab's primary question is **what is out there, who holds it, what it says,
+and how it is used** — not whether any of it is correct. Accuracy is a narrower
+question, and a profile that is wrong is still held, still sold, and still acted
+on. `wmp dossier` reports the inventory; the scoring machinery is secondary.
+
+Read that way, the first collection says something the accuracy framing missed.
+
+**Published by the subject, in full:** a GitHub username, an account creation
+date, a repository count, a follower count, four programming languages, and 19
+buckets of push-hour timestamps. **27 signals.** No name, no location, no
+company, no bio, no email, no website — every optional profile field is empty.
+
+**Assembled about the subject:** 59 interest topics and 54 named advertisers.
+
+The interest topics are the part that looks like a profile. The **advertiser
+list is the part that actually identifies him**, and this lab had been treating
+it as inert — a fact about advertisers, carrying no claim about the subject.
+That was wrong. The list's *composition* is a claim:
+
+- **Columbus State Community College — Columbus Campus.** A community college
+  does not buy impressions outside its catchment. Catchment-bounded
+  advertisers — regional colleges, local dealerships, municipal services —
+  geolocate a viewer far more tightly than any inferred `location` attribute,
+  because the *advertiser's* targeting constraint is doing the work.
+- **Americans for Prosperity** — a political advocacy organisation. Political
+  opinion is GDPR Article 9 special-category data, and the targeting is
+  evidence of an audience placement regardless of whether the subject holds
+  those views.
+- **Four for-profit online universities** (Capella, Chamberlain, Walden, plus
+  Coursera). That cluster is a documented targeting pattern aimed at specific
+  demographic segments; appearing in it says something about which segment the
+  subject was sorted into.
+
+So the disclosure gap is not "27 signals in, 113 out". It is that a person who
+filled in **no** optional profile field anywhere is nonetheless locatable to a
+metro area, placed in a political audience, and sorted into an
+education-marketing segment — with the sharpest evidence sitting in a table
+this lab had classified as containing no claims at all.
+
+**Consequence for the schema.** Holders are first-class: who holds data, how
+they got it, and what their presence implies. An advertiser is not just a name
+in a list — it is an actor with a targeting constraint, and the constraint is
+information.
+
 ## Roadmap
 
 Revised after the research pass. The largest change: the inference layer and
