@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from profilelab import analysis, catalog, entropy, reading, sources, truth, warehouse
+from profilelab import analysis, catalog, entropy, reading, sar, sources, truth, warehouse
 from profilelab.sources import cadbr
 from profilelab.config import ROOT, WORLD_POPULATION
 from profilelab.model import Attribute, Inference, Signal
@@ -439,6 +439,61 @@ def test_wilson_interval_stays_in_bounds_at_extremes():
         analysis.wilson_interval(0, 0)
 
 
+# ── subject-access requests ──────────────────────────────────────────────────
+
+
+def test_fcra_targets_get_the_statutory_template_and_a_15_day_clock():
+    """The FCRA group is the only one enforceable in Ohio — it must cite the
+    statute and carry the 15-day specialty-CRA deadline, not a generic ask."""
+    fcra = [t for t in sar.TARGETS if t.basis == "fcra_609"]
+    assert fcra, "no FCRA targets"
+    assert sar.BASES["fcra_609"][1] == 15
+    text = sar.draft(fcra[0], {})
+    assert "15 U.S.C. §1681g" in text
+    assert "§1681j" in text
+
+
+def test_voluntary_targets_do_not_claim_a_right_they_lack():
+    """Asserting a nonexistent Ohio right would be false and get the request
+    binned. The voluntary letter says so plainly and asks for the refusal."""
+    voluntary = [t for t in sar.TARGETS if t.basis == "voluntary"]
+    text = sar.draft(voluntary[0], {})
+    assert "1681g" not in text
+    assert "has not enacted a comprehensive consumer privacy statute" in text
+    assert "recorded refusal is a complete answer" in text
+
+
+def test_deadline_is_derived_from_the_basis_claimed():
+    from datetime import date, timedelta
+
+    request = sar.Request(target="X", basis="fcra_609", route="r",
+                          sent_on="2026-01-01", due_on="2026-01-16", status="sent")
+    assert date.fromisoformat(request.due_on) - date.fromisoformat(request.sent_on) == timedelta(days=15)
+
+
+def test_overdue_is_only_meaningful_while_awaiting_a_reply():
+    """An answered request is not overdue, however long it took."""
+    past = "2020-01-01"
+    assert sar.Request(target="X", basis="fcra_609", route="r",
+                       sent_on=past, due_on=past, status="sent").overdue is True
+    assert sar.Request(target="X", basis="fcra_609", route="r",
+                       sent_on=past, due_on=past, status="complied").overdue is False
+    assert sar.Request(target="X", basis="fcra_609", route="r").overdue is False
+
+
+def test_request_rejects_unknown_basis_and_status():
+    with pytest.raises(ValueError):
+        sar.Request(target="X", basis="gdpr_but_not_really", route="r")
+    with pytest.raises(ValueError):
+        sar.Request(target="X", basis="voluntary", route="r", status="maybe")
+
+
+def test_control_targets_are_marked_as_having_no_basis():
+    """Zeta, Epsilon and DealerX are asked to measure refusal, not to succeed."""
+    controls = {t.name for t in sar.TARGETS if t.basis == "none"}
+    assert "Zeta Global" in controls
+
+
 # ── holders ──────────────────────────────────────────────────────────────────
 
 
@@ -570,6 +625,8 @@ def test_reading_prompt_asks_for_inference_not_restatement():
         "amazon-signin.png",
         # Ground truth — higher-order personal data than anything else here.
         "data/truth/verdicts.json",
+        # SAR log — real name, address, SSN references, broker correspondence.
+        "data/sar/requests.json",
     ],
 )
 def test_personal_data_paths_are_gitignored(path):

@@ -17,6 +17,11 @@ data/
 data/truth/
 verdicts.json
 
+# Subject-access request log: the subject's real name, address, SSN references,
+# and correspondence with data brokers. The most identifying material here.
+data/sar/
+requests.json
+
 # Personal artifacts, wherever they land — belt and braces, because these
 # arrive as ad-hoc downloads that don't always land under data/.
 exports/

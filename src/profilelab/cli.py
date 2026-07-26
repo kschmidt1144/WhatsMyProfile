@@ -8,7 +8,9 @@ from rich.table import Table
 
 from rich.prompt import Confirm, Prompt
 
-from . import analysis, catalog, entropy, reading, refresh as refresh_mod, sources, truth, warehouse
+from . import (
+    analysis, catalog, entropy, reading, refresh as refresh_mod, sar, sources, truth, warehouse,
+)
 from .sources import adprefs
 from .sources.adprefs import base as adprefs_base
 
@@ -125,6 +127,116 @@ def agreement(
         "from behaviour. Divergence means at least one of them is wrong — which, given "
         "measured segment accuracy, is the expected case.[/dim]"
     )
+
+
+sar_app = typer.Typer(no_args_is_help=True, help="Subject-access requests: ask, and record what comes back.")
+app.add_typer(sar_app, name="sar")
+
+
+@sar_app.command("targets")
+def sar_targets() -> None:
+    """Who is worth writing to, and on what basis."""
+    logged = {r.target: r for r in sar.load()}
+    for basis in ("fcra_609", "voluntary", "none"):
+        rows = [t for t in sar.TARGETS if t.basis == basis]
+        if not rows:
+            continue
+        explanation, days = sar.BASES[basis]
+        colour = {"fcra_609": "green", "voluntary": "yellow", "none": "red"}[basis]
+        console.print(f"\n[bold {colour}]{basis}[/bold {colour}] [dim]· {days}-day clock[/dim]")
+        console.print(f"[dim]{explanation}[/dim]")
+        for t in rows:
+            state = logged.get(t.name)
+            mark = f"[dim]({state.status})[/dim]" if state else ""
+            console.print(f"  [bold]{t.name}[/bold] {mark}")
+            console.print(f"    [dim]{t.route} — {t.note}[/dim]")
+    console.print(
+        "\n[dim]Ohio has no comprehensive privacy law, so only the FCRA group is "
+        "enforceable. The rest are asked in order to record the refusal.[/dim]"
+    )
+
+
+@sar_app.command("draft")
+def sar_draft(
+    target: str = typer.Argument(..., help="Target name or prefix, e.g. 'LexisNexis'."),
+    name: str = typer.Option(None, "--name"),
+    address: str = typer.Option(None, "--address"),
+    email: str = typer.Option(None, "--email"),
+) -> None:
+    """Print the request text to send. Identity fields stay yours to fill in."""
+    found = sar.target_by_name(target)
+    if not found:
+        console.print(f"[red]no target matching {target!r}[/red] [dim]— `wmp sar targets`[/dim]")
+        raise typer.Exit(1)
+    identity = {k: v for k, v in
+                {"name": name, "address": address, "email": email}.items() if v}
+    console.print(sar.draft(found, identity))
+    console.print(
+        f"[dim]basis: {sar.BASES[found.basis][0]}\n"
+        f"route: {found.route}\n"
+        f"log it with: wmp sar sent \"{found.name}\"[/dim]"
+    )
+
+
+@sar_app.command("sent")
+def sar_sent(target: str = typer.Argument(...)) -> None:
+    """Log a request as sent and start its clock."""
+    found = sar.target_by_name(target)
+    if not found:
+        console.print(f"[red]no target matching {target!r}[/red]")
+        raise typer.Exit(1)
+    request = sar.record(found)
+    console.print(
+        f"[green]logged[/green] {request.target} [dim]sent {request.sent_on}, "
+        f"due {request.due_on}[/dim]"
+    )
+
+
+@sar_app.command("update")
+def sar_update(
+    target: str = typer.Argument(...),
+    status: str = typer.Option(..., "-s", "--status", help=f"One of: {', '.join(sar.STATUSES)}"),
+    outcome: str = typer.Option("", "-o", "--outcome", help="What they actually returned or said."),
+) -> None:
+    """Record what came back — including nothing."""
+    if status not in sar.STATUSES:
+        console.print(f"[red]unknown status[/red] [dim]expected: {', '.join(sar.STATUSES)}[/dim]")
+        raise typer.Exit(1)
+    updated = sar.update(target, status, outcome)
+    if not updated:
+        console.print(f"[red]no logged request matching {target!r}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]{updated.target} → {status}[/green]")
+
+
+@sar_app.command("log")
+def sar_log() -> None:
+    """Every request and where it stands."""
+    requests = sar.load()
+    if not requests:
+        console.print("[yellow]nothing sent yet[/yellow] [dim]— `wmp sar targets`[/dim]")
+        return
+    table = Table(title="subject-access requests", header_style="bold")
+    for column in ("target", "basis", "sent", "due", "status", "outcome"):
+        table.add_column(column)
+    for r in sorted(requests, key=lambda r: (r.status, r.target)):
+        status = r.status
+        if r.overdue:
+            status = f"[red]{status} · OVERDUE[/red]"
+        elif status in {"refused", "ignored"}:
+            status = f"[red]{status}[/red]"
+        elif status in {"complied", "partial"}:
+            status = f"[green]{status}[/green]"
+        table.add_row(r.target[:30], r.basis, r.sent_on, r.due_on, status, r.outcome[:28])
+    console.print(table)
+
+    answered = [r for r in requests if r.status in {"complied", "partial"}]
+    stonewalled = [r for r in requests if r.status in {"refused", "ignored"} or r.overdue]
+    console.print(
+        f"\n[dim]{len(answered)} answered · {len(stonewalled)} refused, ignored, or overdue "
+        f"· {len(requests)} total[/dim]"
+    )
+    console.print("[dim]A refusal is a complete result — it measures what the right is worth.[/dim]")
 
 
 @app.command()
