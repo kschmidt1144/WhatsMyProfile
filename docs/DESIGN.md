@@ -146,6 +146,81 @@ Worth keeping as the project's first entry precisely because it failed. A
 confidently wrong inference is the normal case in this field, and the schema
 has to be able to record one.
 
+### Finding 2 — the narrative was wrong, and it was ours
+
+First ground-truth run: 59 Google ad topics plus one GitHub inference, all
+scored by the subject. Google landed **42/59 correct (71%, 95% CI [59%, 81%])**.
+The 80% benchmark measured across 19 data brokers' interest segments sits at the
+top of that interval, so Google's profile is at best typical and possibly worse
+— not the "above benchmark" the first partial run suggested.
+
+But the result worth keeping is about the reading, not the data.
+
+Presented with the raw 59 topics, an LLM (Claude, mid-session) picked out nine
+of them — Relocation & Household Moving, Real Estate, Mattresses, Home
+Furniture, HVAC, Air Cleaners, Household Cleaning Products, Paper Towels, Food
+Wraps — and reported that Google had the subject profiled as **moving house**,
+noting that "recent mover" is among the most valuable segments in retail
+advertising. It read as a crisp, specific, high-confidence finding.
+
+Ground truth:
+
+| Topic | Verdict |
+|---|---|
+| Relocation & Household Moving | ✗ incorrect |
+| Real Estate | ✗ incorrect |
+| Mattresses | ✗ incorrect |
+| HVAC & Climate Control | ✗ incorrect |
+| Air Cleaners & Filters | ✓ correct |
+| Home Furniture | ✓ correct |
+| Household Cleaning Products | ✓ correct |
+| Paper Towels & Household Paper | ✓ correct |
+| Food Wraps & Food Storage | ✓ correct |
+
+**Every topic that specifically encodes "moving" is false. Every topic that
+survives is ordinary household consumption** — paper towels, cleaning products,
+food storage. Things approximately everyone buys. The adjacent career cluster
+(Job Listings, Training & Certification, Colleges) scored fully correct, so half
+the story held and the half that made it a *story* did not.
+
+This is precisely the mechanism [Dig 6](research/06-inference-gap.md) documents:
+an agent combining individually-weak cues into a coherent identity hypothesis.
+The InferLink work measures how often that succeeds. This is the same machinery
+producing a confident false positive — assembled from true-but-generic signals,
+landing on the most commercially valuable and most sensitive reading available.
+
+Two smaller results from the same run:
+
+- **A special-category inference landed.** Drugs & Medications and Health Care
+  Services both scored correct, undisclosed — health is GDPR Article 9 data, and
+  the schema currently files it under `adprefs/interest` alongside Athletic
+  Shoes with no sensitivity distinction. The gap was hypothetical before this
+  run; it now has confirmed instances behind it.
+- **The three misses that cluster** are Jewelry, Make-Up & Cosmetics and
+  Tanning & Sun Care — all stereotypically gender-coded retail categories, all
+  wrong. Suggestive of a bad demographic prior rather than three independent
+  errors, and consistent with [Dig 7](research/07-consequence.md)'s finding that
+  commercial gender segments run ~42.5% accurate for males. At n=3 it is a
+  hypothesis, not a result; testing it needs a platform that exposes its
+  inferred gender directly, which LinkedIn does.
+
+Three consequences for the lab:
+
+1. **LLM readings of a profile are themselves inferences and must be scored
+   like any other.** They currently enter as prose in a chat window and never
+   reach the `inferences` table. Anything a model concludes about the subject
+   belongs in the schema with `inferred_by = <model>`, subject to the same
+   verdict discipline — otherwise the instrument's most fluent source of claims
+   is also its only unaudited one.
+2. **Generic consumer topics are near-useless as evidence and dangerous as
+   narrative glue.** "Food" and "Beverages" score correct for nearly anyone;
+   they add no information and make any story built on them look corroborated.
+   A base-rate column would let the catalog discount them.
+3. **Partial scoring misleads.** The first 18 claims (alphabetical, A–F) scored
+   89%; the remaining 41 scored 63%. Alphabetical order looked arbitrary with
+   respect to truth and was not. Report interim accuracy with its interval, or
+   not at all.
+
 ## Roadmap
 
 Revised after the research pass. The largest change: the inference layer and
