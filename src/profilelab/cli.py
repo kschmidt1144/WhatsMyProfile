@@ -8,7 +8,7 @@ from rich.table import Table
 
 from rich.prompt import Confirm, Prompt
 
-from . import analysis, catalog, entropy, refresh as refresh_mod, sources, truth, warehouse
+from . import analysis, catalog, entropy, reading, refresh as refresh_mod, sources, truth, warehouse
 from .sources import adprefs
 from .sources.adprefs import base as adprefs_base
 
@@ -124,6 +124,59 @@ def agreement(
         "[dim]Convergence across platforms means an attribute is genuinely recoverable "
         "from behaviour. Divergence means at least one of them is wrong — which, given "
         "measured segment accuracy, is the expected case.[/dim]"
+    )
+
+
+@app.command()
+def read(
+    model: str = typer.Option(reading.DEFAULT_MODEL, "-m", "--model"),
+    exclude: str = typer.Option(
+        None, "-x", "--exclude", help="Drop attributes matching this substring (held-out test)."
+    ),
+    yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the briefing and send nothing."),
+) -> None:
+    """Ask a model to profile you from the collected signals.
+
+    Its claims land in the inferences table like any platform's, and are scored
+    the same way — the point of Finding 2.
+    """
+    _require_warehouse()
+    text = reading.briefing(exclude=exclude)
+    if not text:
+        console.print("[yellow]no signals collected yet — run `wmp refresh`[/yellow]")
+        raise typer.Exit(1)
+
+    lines = len(text.splitlines())
+    if dry_run:
+        console.print(text)
+        console.print(f"\n[dim]{lines} signal(s) — nothing sent[/dim]")
+        return
+
+    console.print(
+        f"\n[bold red]This sends your profile off-machine.[/bold red] "
+        f"[dim]Everything else in this lab runs locally; this transmits "
+        f"{lines} collected signal(s) to the Anthropic API as {model}.[/dim]"
+    )
+    console.print("[dim]Preview it first with `wmp read --dry-run`.[/dim]\n")
+    if not yes and not Confirm.ask("Send the briefing?", default=False):
+        console.print("[dim]cancelled — nothing sent[/dim]")
+        return
+
+    try:
+        result = reading.read(model=model, exclude=exclude)
+    except Exception as exc:  # noqa: BLE001 — surface the API error plainly
+        console.print(f"[red]reading failed:[/red] {type(exc).__name__}: {exc}")
+        raise typer.Exit(1) from exc
+
+    if result.refused:
+        console.print(f"[yellow]{result.detail}[/yellow]")
+        return
+
+    stored = reading.store(result)
+    console.print(f"[green]{stored} claim(s) recorded[/green] [dim]as {model}[/dim]")
+    console.print(
+        f"[dim]score them with `wmp score -s {reading.SOURCE}`, then `wmp scorecard`[/dim]"
     )
 
 

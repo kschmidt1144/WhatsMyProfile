@@ -207,11 +207,15 @@ Two smaller results from the same run:
 Three consequences for the lab:
 
 1. **LLM readings of a profile are themselves inferences and must be scored
-   like any other.** They currently enter as prose in a chat window and never
-   reach the `inferences` table. Anything a model concludes about the subject
-   belongs in the schema with `inferred_by = <model>`, subject to the same
-   verdict discipline — otherwise the instrument's most fluent source of claims
-   is also its only unaudited one.
+   like any other.** ✅ Implemented: `wmp read` sends a briefing built from
+   `signals` alone, and the model's claims land in `inferences` with
+   `inferred_by = <model>`, scored by `wmp score` like a platform's. Two
+   invariants are test-enforced — the briefing never carries verdicts (the
+   answer key) and never carries prior inferences (which would turn "what can
+   you derive?" into "do you agree with Google?"). `--exclude` hides an
+   attribute so recoverability can be measured rather than read back. It is
+   also the one command in the lab that transmits anything off-machine, so it
+   confirms first.
 2. **Generic consumer topics are near-useless as evidence and dangerous as
    narrative glue.** "Food" and "Beverages" score correct for nearly anyone;
    they add no information and make any story built on them look corroborated.

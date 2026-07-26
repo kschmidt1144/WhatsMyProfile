@@ -8,6 +8,7 @@ recoverable by a follow-up commit.
 
 from __future__ import annotations
 
+import inspect
 import json
 import math
 import subprocess
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from profilelab import analysis, catalog, entropy, sources, truth
+from profilelab import analysis, catalog, entropy, reading, sources, truth
 from profilelab.config import ROOT, WORLD_POPULATION
 from profilelab.model import Attribute, Inference, Signal
 from profilelab.sources import adprefs, github
@@ -435,6 +436,52 @@ def test_wilson_interval_stays_in_bounds_at_extremes():
     assert analysis.wilson_interval(5, 5)[1] == 1.0
     with pytest.raises(ValueError):
         analysis.wilson_interval(0, 0)
+
+
+# ── LLM readings ─────────────────────────────────────────────────────────────
+
+
+def test_briefing_never_reads_the_answer_key():
+    """The briefing must not carry verdicts or prior inferences.
+
+    Verdicts are ground truth — a briefing containing them would measure
+    reading comprehension, not inference. Prior inferences turn "what can you
+    derive?" into "do you agree with Google?", a different and easier question.
+    Asserted against the query itself, so a later edit that joins `inferences`
+    fails here rather than silently invalidating every reading.
+    """
+    source = inspect.getsource(reading.briefing)
+    query = source[source.index("SELECT") : source.index("ORDER BY")].lower()
+    assert "from signals" in query
+    for forbidden in ("inference", "verdict", "scored", "disclosed"):
+        assert forbidden not in query, f"briefing query must not touch {forbidden!r}"
+
+
+def test_reading_source_name_matches_between_storage_and_claims():
+    """Verdicts key on from_sources; a mismatch would orphan every score."""
+    store_src = inspect.getsource(reading.store)
+    read_src = inspect.getsource(reading.read)
+    assert "write_tidy(SOURCE" in store_src
+    assert "from_sources=SOURCE" in read_src
+
+
+def test_reading_uses_the_current_default_model():
+    assert reading.DEFAULT_MODEL == "claude-opus-5"
+
+
+def test_reading_claim_schema_round_trips():
+    parsed = reading.Reading.model_validate(
+        {"claims": [{"claim": "lives in US Eastern time", "category": "location",
+                     "confidence": 0.7, "basis": "push-hour histogram"}]}
+    )
+    assert parsed.claims[0].category in reading.CATEGORIES
+    assert 0.0 <= parsed.claims[0].confidence <= 1.0
+
+
+def test_reading_prompt_asks_for_inference_not_restatement():
+    """The failure mode in Finding 2 was narrative built on restated signals."""
+    assert "not an inference" in reading.PROMPT
+    assert "{briefing}" in reading.PROMPT
 
 
 # ── the guard that matters most ──────────────────────────────────────────────

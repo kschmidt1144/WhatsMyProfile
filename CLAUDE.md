@@ -20,6 +20,10 @@ uv run wmp refresh -s github --force  # one source, re-download
 uv run wmp coverage                   # what's collected, by source
 uv run wmp entropy [-r 0.3]           # identifiability in bits (-r = redundancy discount)
 uv run wmp inferences --undisclosed   # the inference gap
+uv run wmp read --dry-run             # preview the briefing (sends nothing)
+uv run wmp read                       # ask a model to profile you -> inferences
+uv run wmp score                      # judge claims; ground truth -> data/truth/
+uv run wmp scorecard                  # accuracy + CI, by source
 uv run wmp agreement [-m 2]           # cross-platform topic convergence
 uv run wmp signals -a location        # filter by attribute substring
 uv run wmp attributes                 # the registry + reference entropies
@@ -102,6 +106,15 @@ uv run pytest                         # 46 tests, no network
   finding; `available()` returning False is what keeps them apart.
 - **Advertiser lists are signals, not inferences** — who holds your data is a
   fact about them, not a claim about you. `adprefs/base.FACETS` encodes this.
+- **`wmp read` is the only thing that sends data off-machine.** Everything else
+  is local. It confirms before transmitting; keep it that way.
+- **The briefing must never contain verdicts or prior inferences** — it reads
+  `signals` only. Verdicts are the answer key; prior inferences turn "what can
+  you derive?" into "do you agree?". A test asserts the query never joins them.
+- **Never gate an API call on `ANTHROPIC_API_KEY` being set.** The SDK resolves
+  credentials from the env var, `ANTHROPIC_AUTH_TOKEN`, an `ant auth login`
+  profile, or workload identity — an unset var does not mean unauthenticated.
+  Construct the client bare and catch `AuthenticationError`.
 
 ## Scope
 
