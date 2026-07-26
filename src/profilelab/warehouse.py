@@ -15,13 +15,14 @@ import pandas as pd
 
 from . import catalog, truth
 from .config import TIDY, WAREHOUSE, ensure_dirs
-from .model import Attribute, Collected, Identity, Inference, Signal
+from .model import Attribute, Collected, Holder, Identity, Inference, Signal
 
 TABLES = {
     "signals": Signal,
     "attributes": Attribute,
     "identities": Identity,
     "inferences": Inference,
+    "holders": Holder,
 }
 
 

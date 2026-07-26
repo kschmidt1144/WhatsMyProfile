@@ -155,6 +155,37 @@ class Inference:
             raise ValueError(f"confidence must be in [0, 1], got {self.confidence!r}")
 
 
+@dataclass(frozen=True)
+class Holder:
+    """An organisation that holds, collects, or trades personal data.
+
+    Not necessarily *your* data. A registry entry means "this company is in the
+    business of brokering personal information and is reachable here" — whether
+    they hold a record on you specifically is unknown until a subject-access
+    request comes back. `confirmed` marks the difference, and conflating the two
+    would turn a directory of the industry into a false claim about you.
+
+    `collects` and `sells_to` are the organisation's own disclosures, not our
+    findings.
+    """
+
+    holder: str
+    kind: str  # broker | advertiser | platform
+    source: str
+    website: str = ""
+    contact: str = ""
+    # Where the company says to send a data-subject request.
+    dsar_url: str = ""
+    country: str = ""
+    collects: str = ""  # self-reported sensitive categories
+    sells_to: str = ""  # self-reported recipient categories
+    # Self-reported handling of "right to know" requests, where published.
+    know_requests: int | None = None
+    know_denied: int | None = None
+    confirmed: bool = False  # confirmed to hold data on THIS subject
+    evidence: str = ""
+
+
 @dataclass
 class Collected:
     """What a connector's `parse()` hands back."""
@@ -163,9 +194,11 @@ class Collected:
     signals: list[Signal] = field(default_factory=list)
     identities: list[Identity] = field(default_factory=list)
     inferences: list[Inference] = field(default_factory=list)
+    holders: list[Holder] = field(default_factory=list)
 
     def extend(self, other: Collected) -> None:
         self.attributes.extend(other.attributes)
         self.signals.extend(other.signals)
         self.identities.extend(other.identities)
         self.inferences.extend(other.inferences)
+        self.holders.extend(other.holders)

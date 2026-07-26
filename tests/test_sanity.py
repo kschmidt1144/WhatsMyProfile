@@ -16,7 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from profilelab import analysis, catalog, entropy, reading, sources, truth
+from profilelab import analysis, catalog, entropy, reading, sources, truth, warehouse
+from profilelab.sources import cadbr
 from profilelab.config import ROOT, WORLD_POPULATION
 from profilelab.model import Attribute, Inference, Signal
 from profilelab.sources import adprefs, github
@@ -436,6 +437,46 @@ def test_wilson_interval_stays_in_bounds_at_extremes():
     assert analysis.wilson_interval(5, 5)[1] == 1.0
     with pytest.raises(ValueError):
         analysis.wilson_interval(0, 0)
+
+
+# ── holders ──────────────────────────────────────────────────────────────────
+
+
+def test_registry_entry_is_not_a_claim_that_they_hold_your_data():
+    """`confirmed` must default False.
+
+    A registration proves a company brokers personal data and is reachable. It
+    says nothing about whether they hold a record on this subject. Defaulting
+    the other way would turn a directory of an industry into 581 false claims.
+    """
+    from profilelab.model import Holder
+
+    h = Holder(holder="Example Data Co", kind="broker", source="cadbr")
+    assert h.confirmed is False
+    assert h.know_requests is None and h.know_denied is None
+
+
+def test_holders_is_a_warehouse_table():
+    from profilelab.model import Holder
+
+    assert warehouse.TABLES["holders"] is Holder
+
+
+def test_registry_column_lookup_survives_rewording():
+    """CPPA rewords these headers between filing years; exact keys would break."""
+    columns = [
+        "Data broker name:",
+        "Data broker collects consumers’ precise geolocation data",
+    ]
+    assert cadbr._find(columns, "data broker name") == columns[0]
+    assert cadbr._find(columns, "precise geolocation") == columns[1]
+    assert cadbr._find(columns, "no such column") is None
+
+
+def test_registry_numbers_tolerate_commas_and_blanks():
+    assert cadbr._num("4,310,186") == 4310186
+    assert cadbr._num("") is None
+    assert cadbr._num(None) is None
 
 
 # ── the dossier ──────────────────────────────────────────────────────────────

@@ -37,8 +37,11 @@ def refresh(only: list[str] | None = None, force: bool = False) -> list[SourceRe
             module.fetch(force=force)
             collected = module.parse()
             warehouse.write_tidy(name, collected)
+            detail = f"{len(collected.holders)} holders" if collected.holders else ""
             results.append(
-                SourceResult(name, "collected", len(collected.signals), len(collected.inferences))
+                SourceResult(
+                    name, "collected", len(collected.signals), len(collected.inferences), detail
+                )
             )
         except Exception as exc:  # noqa: BLE001 — one bad source must not abort the run
             results.append(SourceResult(name, "failed", detail=f"{type(exc).__name__}: {exc}"))

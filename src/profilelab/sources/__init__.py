@@ -22,13 +22,14 @@ from __future__ import annotations
 from types import ModuleType
 
 from .base import now, raw_dir, sha256, write_manifest  # re-exported for convenience
-from . import github
+from . import cadbr, github
 from .adprefs import amazon, google, linkedin, meta, x
 
 __all__ = ["REGISTRY", "get", "now", "raw_dir", "sha256", "write_manifest"]
 
 REGISTRY: dict[str, ModuleType] = {
     github.SOURCE: github,
+    cadbr.SOURCE: cadbr,
     x.SOURCE: x,
     linkedin.SOURCE: linkedin,
     meta.SOURCE: meta,

@@ -128,6 +128,54 @@ def agreement(
 
 
 @app.command()
+def holders(
+    collects: str = typer.Option(None, "-c", "--collects", help="Self-reports collecting this, e.g. geolocation."),
+    sells_to: str = typer.Option(None, "-s", "--sells-to", help="Self-reports selling to this, e.g. law enforcement."),
+    confirmed: bool = typer.Option(False, "--confirmed", help="Only those confirmed to hold YOUR data."),
+    limit: int = typer.Option(25, "-n", "--limit"),
+) -> None:
+    """Who is in the business of holding personal data, and what they disclose."""
+    _require_warehouse()
+    where, params = [], []
+    if collects:
+        where.append("collects ILIKE ?")
+        params.append(f"%{collects}%")
+    if sells_to:
+        where.append("sells_to ILIKE ?")
+        params.append(f"%{sells_to}%")
+    if confirmed:
+        where.append("confirmed")
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+
+    total = warehouse.query(f"SELECT COUNT(*) AS n FROM holders {clause}", params)["n"][0]
+    frame = warehouse.query(
+        f"SELECT holder, kind, collects, sells_to, know_requests, know_denied, dsar_url "
+        f"FROM holders {clause} ORDER BY know_requests DESC NULLS LAST, holder LIMIT {int(limit)}",
+        params,
+    )
+    if frame.empty:
+        console.print("[yellow]no holders match[/yellow]")
+        return
+
+    table = Table(title=f"holders ({total} match, showing {len(frame)})", header_style="bold")
+    for column in ("holder", "collects", "sells to", "know reqs", "denied"):
+        table.add_column(column)
+    for row in frame.itertuples(index=False):
+        table.add_row(
+            str(row.holder)[:34],
+            f"[red]{row.collects}[/red]" if row.collects else "[dim]—[/dim]",
+            f"[red]{row.sells_to}[/red]" if row.sells_to else "[dim]—[/dim]",
+            f"{int(row.know_requests):,}" if row.know_requests == row.know_requests and row.know_requests is not None else "—",
+            f"{int(row.know_denied):,}" if row.know_denied == row.know_denied and row.know_denied is not None else "—",
+        )
+    console.print(table)
+    console.print(
+        "[dim]Registry entries mean a company brokers personal data and is reachable — "
+        "NOT that it holds a record on you. `--confirmed` shows the ones proven to.[/dim]"
+    )
+
+
+@app.command()
 def dossier(
     holders: bool = typer.Option(False, "--holders", help="List every named holder in full."),
 ) -> None:
@@ -154,7 +202,7 @@ def dossier(
 
     platforms = [h for h in d.holders if h["kind"] == "platform"]
     advertisers = [h for h in d.holders if h["kind"] == "advertiser"]
-    console.print(f"\n[bold]WHO HOLDS IT[/bold] [dim]({len(d.holders)} named)[/dim]")
+    console.print("\n[bold]WHO HOLDS IT — CONFIRMED[/bold]")
     for row in platforms:
         console.print(f"  [bold]{row['holder']}[/bold] [dim]— {row['via']}[/dim]")
     if advertisers:
@@ -163,6 +211,29 @@ def dossier(
         console.print("[dim]  " + ", ".join(a["holder"] for a in shown) + "[/dim]")
         if not holders and len(advertisers) > len(shown):
             console.print(f"[dim]  …and {len(advertisers) - len(shown)} more — `--holders`[/dim]")
+
+    registry = warehouse.query(
+        """
+        SELECT COUNT(*) AS n,
+               SUM(CASE WHEN collects <> '' THEN 1 ELSE 0 END)  AS sensitive,
+               SUM(CASE WHEN sells_to ILIKE '%law enforcement%' THEN 1 ELSE 0 END) AS law_enf,
+               SUM(CASE WHEN sells_to ILIKE '%government%' THEN 1 ELSE 0 END)      AS govt
+        FROM holders WHERE kind = 'broker'
+        """
+    )
+    if not registry.empty and registry["n"][0]:
+        r = registry.iloc[0]
+        console.print(
+            f"\n[bold]WHO COULD HOLD IT — REGISTERED BROKERS[/bold] [dim]({int(r['n'])})[/dim]"
+        )
+        console.print(
+            f"  [dim]{int(r['sensitive'])} self-report collecting a sensitive category · "
+            f"{int(r['govt'])} sold to government · {int(r['law_enf'])} to law enforcement[/dim]"
+        )
+        console.print(
+            "  [dim]Registration proves they broker data, not that they hold yours — "
+            "`wmp holders` to filter, a subject-access request to confirm.[/dim]"
+        )
 
     console.print(f"\n[bold]WHAT IT SAYS ABOUT YOU[/bold] [dim]({len(d.claims)} claims)[/dim]")
     by_who: dict[str, int] = {}
